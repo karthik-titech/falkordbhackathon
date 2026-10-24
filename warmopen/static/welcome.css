@@ -569,3 +569,12 @@ body.explore-page { padding-bottom: 0; }
 .people-match-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 9px; }
 .person-match-score { flex-shrink: 0; padding: 6px 8px; border-radius: 7px; background: var(--match-bg); color: var(--match-ink); font: 650 12px system-ui,sans-serif; }
 .person-match-score-label { margin: 2px 0 8px; color: #7d8777; font-size: 10px; }
+
+.system-one-flow { display: grid; grid-template-columns: minmax(0,1fr) 20px minmax(0,1fr) 20px minmax(0,1fr) 20px minmax(0,1fr); gap: 10px; align-items: center; margin: 28px 0; }
+.system-one-flow article { align-self: stretch; padding: 22px 18px; border: 1px solid #d5e0ce; border-radius: 15px; background: #fffefa; }
+.system-one-flow article:nth-of-type(3) { background: #e8f0e1; border-color: #afc4a2; }
+.system-one-flow h3 { margin: 12px 0 10px; color: #315d4d; font: 600 16px/1.4 system-ui,sans-serif; }
+.system-one-flow p { margin: 0; color: #657462; font-size: 13px; line-height: 1.7; }
+.system-one-arrow { text-align: center; color: #8fa485; font-size: 22px; }
+.system-one-details { margin-top: 24px; }
+@media (max-width: 800px) { .system-one-flow { grid-template-columns: minmax(0,1fr); gap: 9px; } .system-one-arrow { transform: rotate(90deg); } }

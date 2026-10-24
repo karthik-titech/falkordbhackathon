@@ -12,7 +12,7 @@
   <header class="welcome-header"><a class="wordmark" href="/try"><span class="wordmark-mark" aria-hidden="true">↗</span>Back to conferences</a><a class="quiet-link" href="#definitions">Connection types explained</a></header>
   <main class="welcome-main how-main">
     <section class="welcome-hero"><p class="eyebrow">A LITTLE CONTEXT GOES A LONG WAY</p><h1>From a room of strangers<br>to a reason to say hello.</h1><p class="hero-copy">Here is what we look at, how we connect the dots, and where the suggestions come from.</p></section>
-    <nav class="how-nav" aria-label="On this page"><a href="#process">The process ↓</a><a href="#definitions">The three connection types ↓</a><a href="#evaluation">What the numbers mean ↓</a></nav>
+    <nav class="how-nav" aria-label="On this page"><a href="#process">The process ↓</a><a href="#system-1">Quick System 1 decisions ↓</a><a href="#definitions">The three connection types ↓</a><a href="#evaluation">What the numbers mean ↓</a></nav>
     <section id="process" class="how-section">
       <p class="eyebrow">THE PROCESS</p><h2>How your next conversation takes shape</h2>
       <div class="process-chart" role="group" aria-label="Process flowchart, with optional profile research and model or estimate branches">
@@ -30,12 +30,31 @@
         <div class="flow-arrow" aria-hidden="true">↓</div>
         <div class="flow-decision">Enough supporting evidence for an assessment?</div>
         <div class="flow-branches">
-          <div class="flow-box flow-model"><span class="flow-step">YES · DECISIONS API</span><h3>Assess fit and rank the options</h3><p>The model receives abstract counts, booleans, and fixed labels: topic overlap, desired-skill overlap, cited routes, evidence counts, and anonymous opening-line candidates. Available mention context contributes aggregate tone counts.</p><p class="flow-small">Names, profile links, raw posts, and opening-line text are not sent to the decision model. We only show a model assessment when the response passes confidence and consistency checks.</p></div>
+          <div class="flow-box flow-model"><span class="flow-step">YES · SYSTEM 1-STYLE DECISIONS</span><h3>Make a quick judgment from the available evidence</h3><p>The model receives abstract counts, booleans, and fixed labels: topic overlap, desired-skill overlap, cited routes, evidence counts, and anonymous opening-line candidates. Available mention context contributes aggregate tone counts.</p><p class="flow-small">Names, profile links, raw posts, and opening-line text are not sent to the decision model. We only show a model assessment when the response passes confidence and consistency checks.</p></div>
           <div class="flow-box"><span class="flow-step">LIMITED EVIDENCE OR UNAVAILABLE MODEL</span><h3>Use a clearly marked starting estimate</h3><p>A fixed rule uses the available evidence counts. We keep the model assessment empty and label the displayed number as a rough, uncalibrated starting estimate.</p><p class="flow-small">No supported category? We say so. You still get opening lines.</p></div>
         </div>
         <div class="flow-arrow" aria-hidden="true">↓</div>
         <div class="flow-box flow-finish"><span class="flow-step">04 · YOUR NEXT MOVE</span><h3>Three ways to say hello</h3><p>Pick an opening line, check its source, and make it your own. A fully cited connection through the same person gets first priority; otherwise the model or a fixed evidence-based order ranks the suggestions. These are starting points, not scripts you have to follow.</p></div>
       </div>
+    </section>
+    <section id="system-1" class="how-section">
+      <p class="eyebrow">BUILT FOR A MOVING ROOM</p>
+      <h2>System 1-style decisions. A useful next move.</h2>
+      <p class="how-intro">The person you want to meet may be heading to their next session. You need a reason to approach them and something natural to say—not a long report after the opportunity has passed.</p>
+      <div class="system-one-flow" role="group" aria-label="Quick decision flow: research, retrieve graph evidence, assess fixed choices, suggest a next move">
+        <article><span class="flow-step">01 · RESEARCH</span><h3>Bright Data finds context</h3><p>Your consented public profile supplies professional topic signals. Available public sources give context about the target.</p></article>
+        <span class="system-one-arrow" aria-hidden="true">→</span>
+        <article><span class="flow-step">02 · CONNECT</span><h3>FalkorDB supplies evidence</h3><p>Graph queries identify shared topics, sought capabilities, and cited paths. We turn those facts into compact counts and fixed labels.</p></article>
+        <span class="system-one-arrow" aria-hidden="true">→</span>
+        <article><span class="flow-step">03 · JUDGE</span><h3>One request, six decisions</h3><p>The Decisions API assesses overall fit, checks the connection type, assesses three category fits, and selects an anonymous opening-line candidate.</p></article>
+        <span class="system-one-arrow" aria-hidden="true">→</span>
+        <article><span class="flow-step">04 · ACT</span><h3>You choose how to say hello</h3><p>See a connection category, an uncalibrated fit estimate, and three opening lines with sources. Use them as a starting point for a real conversation.</p></article>
+      </div>
+      <div class="evaluation-grid system-one-details">
+        <article class="flow-box"><h3>How we keep the judgment focused</h3><p>We implement a System 1-style decision stage: a small set of bounded choices over prepared evidence, rather than asking for an open-ended written analysis.</p><p>The model receives numbers, booleans, fixed labels, and anonymous candidate IDs. It does not receive names, profile links, raw posts, or the opening-line text. Already loaded graph evidence and browser-cached suggestions can be reused for the same person and context.</p></article>
+        <article class="flow-box"><h3>What happens when a quick judgment is unavailable?</h3><p>The decision request has an eight-second network timeout. If it fails, refuses, or returns an inconsistent or low-confidence answer, we keep the model assessment empty and use clearly labeled starting estimates and sourced or general opening lines.</p><p>A supported mutual-person opener gets first priority. Otherwise, a valid model choice or deterministic evidence-based order ranks the opening lines. Missing evidence never becomes an invented relationship.</p></article>
+      </div>
+      <aside class="how-note"><strong>Quick decisions are the design goal, not a measured speed claim.</strong> Fresh profile or website research can take longer than the decision stage. The app does not track physical location, and its fit scores are not calibrated probabilities of friendship or conversation success.</aside>
     </section>
     <section id="definitions" class="how-section"><p class="eyebrow">OUR DEFINITIONS</p><h2>Three different reasons to connect</h2><p class="how-intro">These describe the evidence for a conversation. They are not personality types.</p>
       <div class="definition-grid">
