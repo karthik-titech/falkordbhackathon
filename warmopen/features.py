@@ -15,14 +15,14 @@ def _portfolio_hooks(store, request):
     """Read public investment evidence and the company's conference speakers."""
     rows = store.query(
         store.event(),
-        "MATCH (:Person {id: $target})-[:PARTNER_AT]->(:Fund)"
+        "MATCH (:Person {id: $target})-[:PARTNER_AT]->(f:Fund)"
         "-[r:INVESTED_IN]->(c:Company), (e:Evidence) "
         "WHERE e.id = r.evidence_id AND e.visibility = 'public' "
-        "RETURN properties(c), properties(e) ORDER BY c.id, e.id",
+        "RETURN properties(c), properties(e), f.name, r.announced ORDER BY c.id, e.id, f.id",
         {"target": request["target"]},
     ).result_set
     hooks = []
-    for company, evidence in rows:
+    for company, evidence, fund, announced in rows:
         if not _hook_evidence(evidence):
             continue
         members = store.query(
@@ -39,6 +39,7 @@ def _portfolio_hooks(store, request):
             {"company": company["id"]},
         ).result_set
         hooks.append({"company": company, "evidence": evidence, "members": members,
+                      "fund": fund, "announced": announced is True,
                       "topics": {value for row in topics for value in row if value}})
     return hooks
 

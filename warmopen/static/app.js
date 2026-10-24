@@ -2,11 +2,12 @@
 const $ = id => document.getElementById(id);
 document.title = PRODUCT_NAME;
 $("product-name").textContent = `${PRODUCT_NAME} · FalkorDB`;
-let people = [], targets = [], requestId = null, requestRequester = null, requestState = null, revealed = false;
+let people = [], targets = [], requestId = null, requestRequester = null, requestTarget = null, requestState = null, revealed = false;
 let names = {}, evidence = {}, polling = false, busy = false;
 let scored = false, opened = false, animatedRoute = null;
 const offers = new Map();
 let panelSession = null, panelRevision = 0, panelPolling = null;
+let meetRevision = 0;
 const CONFERENCE_NAMES = {
   aie_worldsfair_2026: "AI Engineer World's Fair 2026",
   github_universe_2026: "GitHub Universe 2026"
@@ -49,8 +50,14 @@ function controls() {
   $("send").disabled = busy || !["draft", "approved"].includes(requestState);
   $("find").disabled = busy || !$("requester").value || !$("target").value;
   $("log-meeting").disabled = busy || !$("requester").value || !$("meeting-person").value || !$("requester-token").value;
+  $("journey-conference").disabled = busy || !requestId;
+  $("journey-search").disabled = busy || !requestId || !$("journey-conference").value;
+  $("journey-future").disabled = busy || !requestId;
+  $("journey-nearby-flag").disabled = busy || !requestId;
+  $("journey-nearby").disabled = busy || !requestId || !$("journey-nearby-flag").checked;
   for (const id of ["requester", "target", "goal", "target-filter", "meeting-filter", "meeting-person", "requester-token"]) $(id).disabled = busy;
   for (const button of document.querySelectorAll("[data-reveal]")) button.disabled = busy || revealed;
+  for (const button of document.querySelectorAll("[data-meet-person]")) button.disabled = busy;
 }
 async function action(work) {
   if (busy) return;
@@ -84,14 +91,14 @@ function slide(data) {
   const reachable = [...offers].find(([, answer]) => answer.status === "reachable");
   const ownerId = route?.persons[0] || reachable?.[0];
   const owner = ownerId && (names[ownerId] || ownerId);
-  const headlines = {find: "Find your next conversation.", ask: `A warm path to ${target}.`,
+  const headlines = {find: "Who should I meet?", ask: `A warm path to ${target}.`,
     approve: owner ? `${owner} can reach ${target}.` : `A warm path to ${target}.`,
     score: `Your fit with ${target}.`, open: "Three ways to open."};
   $("headline").textContent = headlines[step];
   $("headline-detail").hidden = !owner || step !== "ask";
   $("headline-detail").textContent = owner ? `${owner} can reach them in ${route?.edges.length ?? reachable[1].hops} hops.` : "";
   const speaker = targets.find(person => person.id === request?.target), talk = speaker?.talks[0];
-  $("subline").textContent = request ? [request.goal === "invest" ? "Invest" : "Product sales proposal", talk?.title, conferenceName(talk?.conference)].filter(Boolean).join(" · ") : "Choose a speaker and a goal.";
+  $("subline").textContent = request ? [request.goal === "invest" ? "Invest" : "Product sales proposal", talk?.title, conferenceName(talk?.conference)].filter(Boolean).join(" · ") : "Choose a person and a goal.";
 }
 function draw(route, request) {
   const view = $("path-view"); view.replaceChildren(); $("hop-evidence").replaceChildren();
@@ -128,6 +135,10 @@ function draw(route, request) {
     } else view.append(group);
     const row = node("p", `${names[edge.from] || edge.from} → ${names[edge.to] || edge.to}: ${label}. `, "claim");
     row.append(item ? sourceLink(item.url, item.claim || "Public evidence") : node("span", "No public citation for this hop."));
+    const other = evidence[edge.other_evidence_id];
+    if (other && edge.other_evidence_id !== edge.evidence_id) {
+      row.append(document.createTextNode(" · "), sourceLink(other.url, other.claim || "Other participant source"));
+    }
     $("hop-evidence").append(row);
   }
   for (const id of persons) {
@@ -270,6 +281,48 @@ function filterTargets() {
   if (filtered.some(target => target.id === previous)) $("target").value = previous;
   controls();
 }
+async function refreshMeet() {
+  const revision = ++meetRevision, requester = $("requester").value, goal = $("goal").value;
+  $("meet-columns").replaceChildren();
+  $("meet-status").textContent = requester ? "Loading graph suggestions…" : "Choose a requester.";
+  if (!requester) return;
+  try {
+    const params = new URLSearchParams({requester, goal});
+    const data = await api(`/api/meet?${params}`, undefined, $("requester-token").value);
+    if (revision !== meetRevision) return;
+    const markers = {mirror: "◪", missing_piece: "◩", unexpected: "□", target: "■"};
+    for (const [index, category] of data.items.entries()) {
+      const column = node("section", undefined, `meet-column meet-${category.id}`), heading = node("h3");
+      const marker = node("span", markers[category.id], "reason-marker"); marker.setAttribute("aria-hidden", "true");
+      heading.append(marker, document.createTextNode(`${index + 1} ${category.label}`)); column.append(heading);
+      for (const item of category.items) {
+        names[item.person] = item.name;
+        const card = node("article", undefined, "meet-person"), button = node("button", item.name);
+        button.type = "button"; button.dataset.meetPerson = item.person; button.disabled = busy;
+        button.onclick = () => action(async () => {
+          $("target-filter").value = "";
+          filterTargets();
+          if (![...$("target").options].some(option => option.value === item.person)) {
+            $("target").append(new Option(item.name, item.person));
+          }
+          $("target").value = item.person;
+          await findPath(); $("status").textContent = "Path search complete.";
+        });
+        card.append(button, node("p", item.reason, "claim"));
+        if (item.url) card.append(sourceLink(item.url, "Source"));
+        column.append(card);
+      }
+      if (!category.items.length) column.append(node("p", "No matches yet.", "claim"));
+      const details = node("details"), query = node("pre", category.cypher);
+      details.append(node("summary", "Show the query"), query,
+        node("pre", JSON.stringify(category.params, null, 2)));
+      column.append(details); $("meet-columns").append(column);
+    }
+    $("meet-status").textContent = "Each suggestion comes from the graph. Select a person to find a path.";
+  } catch (error) {
+    if (revision === meetRevision) $("meet-status").textContent = error.message;
+  }
+}
 $("target-filter").oninput = filterTargets;
 function filterMeetings() {
   const previous = $("meeting-person").value, term = $("meeting-filter").value.toLowerCase();
@@ -288,24 +341,125 @@ function selectRequester() {
   $("meeting-status").textContent = "";
   filterMeetings();
   panelOwners();
+  refreshMeet();
 }
 $("requester-token").oninput = () => {
   if ($("requester-token").value) sessionStorage.setItem(tokenKey(), $("requester-token").value);
   else sessionStorage.removeItem(tokenKey());
   controls();
+  refreshMeet();
 };
 $("meeting-filter").oninput = filterMeetings;
 $("meeting-person").onchange = controls;
 $("requester").onchange = selectRequester;
+$("goal").onchange = refreshMeet;
 $("target").onchange = controls;
+function renderCues(items, container) {
+  container.replaceChildren();
+  for (const item of items) {
+    const card = node("article", undefined, "cue"), cited = evidence[item.evidence_id];
+    card.append(node("p", `“${item.text}”`));
+    if (cited) card.append(sourceLink(cited.url, "Source"), node("p", cited.claim, "claim"));
+    else card.append(node("p", "No source: general opener", "claim"));
+    container.append(card);
+  }
+}
+function renderJourneyRoute(route, conference) {
+  const article = node("article", undefined, "journey-route"), first = route.intermediaries?.[0];
+  const person = first && (names[first.person] || first.person);
+  const button = node("button", person ? `View route via ${person}` : "View route");
+  button.type = "button";
+  button.onclick = () => draw(route, {id: requestId, requester: requestRequester, target: requestTarget});
+  article.append(button, node("p", `${route.hops} supported relationship hops · ${conference.name}`, "claim"));
+  if (first) {
+    const source = evidence[first.evidence_id];
+    article.append(node("p", `${person} has cited attendance at ${conference.name}.`, "claim"));
+    if (source) article.append(sourceLink(source.url, source.claim));
+  }
+  return article;
+}
+function renderJourney(data) {
+  const results = $("journey-results"); results.replaceChildren();
+  const parts = [];
+  if (data.plan) {
+    if (data.plan.conference) {
+      const section = node("section", undefined, "journey-result"), cited = evidence[data.plan.conference.evidence_id];
+      section.append(node("h3", data.plan.conference.name));
+      if (cited) section.append(node("p", cited.claim, "claim"), sourceLink(cited.url, "Target appearance source"));
+      if (data.plan.routes.length) {
+        if (data.plan.decision?.choice) {
+          const selected = data.plan.routes.find(route => route.route_id === data.plan.decision.choice);
+          const message = data.plan.decision.choice === "APPROACH_DIRECTLY" ? "The model recommends approaching directly." :
+            (selected ? `Suggested supported route via ${names[selected.persons[1]] || selected.persons[1]}.` : "The model returned no available route.");
+          section.append(node("p", message, "claim"));
+        } else section.append(node("p", data.plan.decision?.abstained ?
+          "The model abstained. Routes are ordered by hop count and cited evidence." : "Routes are ordered by hop count and cited evidence.", "claim"));
+        for (const route of data.plan.routes) section.append(renderJourneyRoute(route, data.plan.conference));
+        parts.push(`Found ${data.plan.routes.length} supported route${data.plan.routes.length === 1 ? "" : "s"}.`);
+      } else {
+        section.append(node("p", data.plan.reason || "No cited attending connection reaches this target.", "claim"));
+        parts.push(data.plan.reason || "No cited attending connection reaches this target.");
+      }
+      if (data.plan.truncated) section.append(node("p", "Search limit reached; showing the routes found so far.", "claim"));
+      results.append(section);
+    } else {
+      parts.push(data.conferences.length ? "Choose a current conference appearance." : "No current target appearance has a public source yet.");
+    }
+  }
+  for (const plan of data.future || []) {
+    const section = node("section", undefined, "journey-result"), cited = evidence[plan.conference.evidence_id];
+    section.append(node("h3", `${plan.conference.name} · ${plan.conference.starts || "date not listed"}`));
+    if (cited) section.append(node("p", cited.claim, "claim"), sourceLink(cited.url, "Confirmed target attendance source"));
+    for (const route of plan.routes) section.append(renderJourneyRoute(route, plan.conference));
+    if (plan.truncated) section.append(node("p", "Search limit reached; showing the routes found so far.", "claim"));
+    results.append(section);
+  }
+  if (data.could_not_connect) {
+    parts.push(data.future?.length ? "Future conferences with confirmed target attendance and a cited attending connection:" :
+      "No future conference has both confirmed target attendance and a cited attending connection.");
+  }
+  if (data.nearby) {
+    const section = node("section", undefined, "journey-result");
+    const cueCards = node("div", undefined, "cards");
+    section.append(node("h3", "Cited ways to open"), cueCards);
+    renderCues(data.openers || [], cueCards);
+    results.append(section);
+    parts.push("These openers use the existing public evidence flow.");
+  }
+  $("journey-status").textContent = parts.join(" ") || (data.conferences.length ? "Choose a conference and find attending connections." : "No current conference appearance is confirmed.");
+}
+async function loadJourneyOptions() {
+  $("journey-panel").hidden = false;
+  $("journey-heading").textContent = `Stay focused on ${names[requestTarget] || requestTarget}`;
+  const data = await api(`/api/requests/${requestId}/plan`, {}, requesterToken());
+  const select = $("journey-conference"), previous = select.value;
+  select.replaceChildren(...data.conferences.map(item => new Option(`${item.name} · ${item.starts || item.timing}`, item.id)));
+  if (data.conferences.some(item => item.id === previous)) select.value = previous;
+  renderJourney(data);
+  controls();
+  if (select.value) await requestJourney();
+}
+async function requestJourney(extra = {}) {
+  const body = {...extra};
+  if (($( "journey-conference").value)) body.conference_id = $("journey-conference").value;
+  const data = await api(`/api/requests/${requestId}/plan`, body, requesterToken());
+  renderJourney(data);
+}
+$("journey-search").onclick = () => action(async () => requestJourney());
+$("journey-future").onclick = () => action(async () => requestJourney({could_not_connect: true}));
+$("journey-nearby").onclick = () => action(async () => requestJourney({nearby: true}));
+$("journey-conference").onchange = controls;
+$("journey-nearby-flag").onchange = controls;
 async function findPath() {
   const requester = $("requester").value;
   const data = await api("/api/requests", {requester, target: $("target").value, goal: $("goal").value}, $("requester-token").value);
   requestRequester = requester;
-  requestId = data.request_id; requestState = data.state; revealed = false; offers.clear(); ownersView();
+  requestId = data.request_id; requestTarget = $("target").value; requestState = data.state; revealed = false; offers.clear(); ownersView();
+  $("journey-nearby-flag").checked = false;
   scored = false; opened = false; animatedRoute = null;
   $("fit").textContent = "Ready to score."; $("opener-cards").replaceChildren();
   await refresh();
+  await loadJourneyOptions();
 }
 $("find-form").onsubmit = event => {
   event.preventDefault(); action(async () => {
@@ -316,6 +470,7 @@ $("meeting-form").onsubmit = event => {
   event.preventDefault(); action(async () => {
     const person = $("meeting-person").value;
     await api("/api/meetings", {requester: $("requester").value, person}, $("requester-token").value);
+    await refreshMeet();
     $("meeting-status").textContent = `Logged: you met ${names[person] || person}. Find a path again to use it.`;
     if ($("target").value) {
       await findPath(); $("status").textContent = "Path search complete.";
@@ -368,13 +523,7 @@ $("score").onclick = () => action(async () => {
 $("openers").onclick = () => action(async () => {
   const data = await api(`/api/requests/${requestId}/openers`, null, requesterToken()); $("opener-cards").replaceChildren();
   opened = true;
-  for (const item of data.items) {
-    const card = node("article", undefined, "cue"), cited = evidence[item.evidence_id];
-    card.append(node("p", `“${item.text}”`));
-    if (cited) card.append(sourceLink(cited.url, "Source"), node("p", cited.claim, "claim"));
-    else card.append(node("p", "No source: general opener", "claim"));
-    $("opener-cards").append(card);
-  }
+  renderCues(data.items, $("opener-cards"));
   await refresh(); $("status").textContent = "Three opener cues ready.";
 });
 $("send").onclick = () => action(async () => {
@@ -389,7 +538,7 @@ async function init() {
     $("requester").replaceChildren(...people.map(person => new Option(person.name, person.id)));
     filterTargets();
     selectRequester();
-    $("status").textContent = people.length ? "Choose a speaker and goal." : "No consented attendees loaded. Load the curated demo seed first.";
+    $("status").textContent = people.length ? "Choose a person and goal." : "No consented attendees loaded. Load the curated demo seed first.";
   } catch (error) { $("status").textContent = error.message; }
   controls();
   slide();

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conferences</title>
+  <link rel="stylesheet" href="/static/welcome.css">
+  <script src="/static/brand.js"></script>
+  <script src="/static/conferences.js" defer></script>
+</head>
+<body class="welcome-page">
+  <header class="welcome-header">
+    <a class="wordmark" href="/try" aria-label="Conference directory"><span class="wordmark-mark" aria-hidden="true">↗</span><span id="conference-brand"></span></a>
+    <a class="quiet-link" href="/explore">Explore public connections</a>
+  </header>
+  <main class="welcome-main">
+    <section class="welcome-hero">
+      <p class="eyebrow">MEET PEOPLE THROUGH THE WORK</p>
+      <h1>Start with the room.</h1>
+      <p class="hero-copy">Choose a conference to see public speakers and any confirmed attendee list. You can explore cited connections without signing up.</p>
+    </section>
+    <div class="directory-heading">
+      <h2>Conference directory</h2>
+      <p id="conference-status" class="quiet-copy" role="status" aria-live="polite">Loading conferences…</p>
+    </div>
+    <section id="conference-list" class="conference-grid" aria-label="Conferences"></section>
+    <footer class="welcome-footer"><a href="/workspace">Introduction workspace</a><span>Public sources are linked on each profile.</span></footer>
+  </main>
+</body>
+</html>

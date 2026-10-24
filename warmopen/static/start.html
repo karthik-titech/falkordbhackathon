@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choose a conference</title>
+  <link rel="stylesheet" href="/static/welcome.css">
+  <script src="/static/brand.js"></script>
+  <script src="/static/start.js" defer></script>
+</head>
+<body class="welcome-page">
+  <header class="welcome-header">
+    <a class="wordmark" href="/try"><span class="wordmark-mark" aria-hidden="true">↗</span><span id="start-brand"></span></a>
+    <a class="quiet-link" href="/try">Conference directory</a>
+  </header>
+  <main class="welcome-main start-main">
+    <p class="eyebrow">YOUR CONFERENCE</p>
+    <h1 id="start-title">A useful next step.</h1>
+    <p id="start-dates" class="quiet-copy"></p>
+    <section class="profile-card">
+      <p class="eyebrow">OPTIONAL · THIS BROWSER SESSION ONLY</p>
+      <h2>Add your profile links</h2>
+      <p class="quiet-copy">Links stay in this browser session. We do not look them up or match them to conference profiles yet.</p>
+      <div id="profile-form">
+        <label for="profile-linkedin">LinkedIn profile URL</label>
+        <input id="profile-linkedin" type="url" inputmode="url" autocomplete="url" aria-describedby="linkedin-error" placeholder="https://www.linkedin.com/in/your-name">
+        <p id="linkedin-error" class="field-error" aria-live="polite"></p>
+        <label for="profile-x">X or Twitter profile URL</label>
+        <input id="profile-x" type="url" inputmode="url" autocomplete="url" aria-describedby="x-error" placeholder="https://x.com/yourname">
+        <p id="x-error" class="field-error" aria-live="polite"></p>
+        <div class="profile-actions">
+          <button id="continue-button" type="button" class="primary-button">Continue to attendee discovery</button>
+          <a id="skip-button" class="secondary-link" href="#">Skip profile links and explore</a>
+          <button id="clear-button" type="button" class="text-button">Clear saved links</button>
+        </div>
+      </div>
+      <p id="profile-status" class="quiet-copy" role="status" aria-live="polite"></p>
+    </section>
+    <p class="start-footnote">Public attendee and speaker lists remain separate. A speaker listing does not confirm attendance.</p>
+  </main>
+</body>
+</html>

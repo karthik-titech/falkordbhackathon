@@ -1,124 +1,96 @@
-# Demo runbook
+# Local demo runbook
 
-Run live on Daytona. Use a phone hotspot first if venue wifi fails. Run laptop
-replay second if the preview URL is unavailable. Replay needs Python 3.11+ and
-the repo plus recording files. It needs no FalkorDB, provider keys, packages, or
-external web assets.
+## Public trial
 
-## Prepare Daytona
-
-Use the existing `warm-open-ptc` sandbox with FalkorDB and its approved Python
-environment. Copy the repo there, excluding credentials and harness files.
-Use the environment's Python (for example, activate `/opt/wo/bin/activate`).
-The server uses the existing `falkordb` client. Do not install packages for replay.
-
-| Variable | Use |
-|---|---|
-| `FALKORDB_HOST` | Live graph host, usually `127.0.0.1` within the sandbox |
-| `FALKORDB_PORT` | Graph port, default `6379` |
-| `TYPESAFE_JEV_API_KEY` | Optional live fit provider; absent means `jev_unavailable` |
-| `ANTHROPIC_API_KEY` | Optional opener provider; absent means templates |
-| `WARMOPEN_LLM_MODEL` | Optional Anthropic model override |
-| `WARMOPEN_SEED` | Startup seed path, default `data/seed.json` |
-| `PORT` | Sandbox script HTTP port, default `8080` |
-
-Set credentials through the sandbox's environment controls. Never put provider
-keys in files or command arguments. Owner tokens are entered only on the owner
-page and kept in that browser tab's sessionStorage, separate from API recordings.
-
-The data owner must supply `data/seed.json` with a requester and consenting
-owners. The supplied `data/seed_public.json` has conference facts but no consented
-attendees or private routes. It can validate speaker loading; it cannot run the
-approval demo alone. Keep the curated seed local if it contains owner tokens or
-private data. Do not invent consent or relationship evidence.
-
-Load and start explicitly:
+Start the no-signup trial:
 
 ```sh
-python3 -m warmopen.cli load data/seed.json
-python3 -m warmopen.cli serve --host 0.0.0.0 --port 8080
+docker compose up --build
 ```
 
-Or use the startup script, which loads the seed only if the event graph is empty:
+Open <http://localhost:8080>. Choose a conference, then enter your own
+LinkedIn and X links or skip to the directory. The links stay in browser session
+storage; the app does not fetch or import social profiles. The directory labels
+confirmed attendees and scheduled speakers separately. The public graph
+explorer at `/explore` needs no credentials and does not authenticate as a
+speaker or send an introduction. The web port is bound to the local machine.
+A public organizer URL needs a separate HTTPS deployment.
+
+Stop the trial with `Ctrl-C`. Docker Compose keeps its graph data in a named
+volume when containers stop.
+
+## Load sourced attendance
+
+Use a permitted organizer roster or public professional announcements. See
+[attendee import](attendee-import.md) for the manifest format and its rules.
+Keep the manifest outside the repository if it contains private information.
+
+Stop the app before importing into its graph:
 
 ```sh
-sh scripts/run_sandbox.sh
+docker compose stop web
+docker compose run --rm -v "$ATTENDEE_MANIFEST:/input/attendees.json:ro" web python -m warmopen.cli import-attendees /input/attendees.json --check
 ```
 
-Expose port 8080 through the Daytona preview URL. Open that URL on the laptop.
-Open `/owner?owner=<owner-id>` in a second browser and enter the owner's token.
-Use one server process and one GraphStore for the server. Do not start a second
-writer against the same graph namespace.
-
-## Rehearse and record
-
-Start a new recording directory for each rehearsal. Stop the prior server first:
+Review the validation summary. To apply the complete snapshot, run the same
+command without `--check`, then restart the app:
 
 ```sh
-python3 -m warmopen.cli serve --host 0.0.0.0 --port 8080 --record recordings/demo
+docker compose run --rm -v "$ATTENDEE_MANIFEST:/input/attendees.json:ro" web python -m warmopen.cli import-attendees /input/attendees.json
+docker compose up -d web
 ```
 
-1. Pick requester, target, and Invest or Product sales proposal. Select Find a path.
-2. Inspect the public path and select an edge to open its evidence.
-3. Select Ask owners. Each answer hides intermediate names.
-4. In the second browser, approve reachability. In the first, select Ask owners again.
-5. In the second browser, approve reveal. In the first, select that owner's Reveal.
-6. Inspect the revealed route, select Score fit, then Openers. Read the source claims.
-7. Select Send intro request. Confirm requested state and all four agents in the timeline.
+Attendance records establish only conference attendance. They do not add
+relationships or grant access to anyone's private graph. Do not invent
+attendance, consent or relationship evidence.
 
-The revealed route starts at the owner. The UI keeps the requester at the left,
-without inventing a requester-to-owner graph hop. Only one reveal is allowed.
-Grants expire after 15 minutes. Renew them in the owner page for a later rehearsal.
+## Configure a full consent demo
 
-Every API response, including errors and polls, is saved as a numbered JSON file.
-Headers and owner tokens are not recorded. Files contain request ids, source facts,
-and any approved revealed names. Use only a consented demo run and keep recordings
-local. Copy the completed `recordings/demo` directory to the laptop before the demo.
+The requester and owner pages are available at `/workspace` and `/owner`. A full demo
+requires conference data plus consenting owner records and credentials supplied
+by the data owner. Keep those files and credentials outside the public speaker
+dataset and repository. The owner page accepts its owner's token; each owner
+must separately approve reachability and route reveal.
 
-## Offline fallback
+An optional Decisions service can be configured for uncalibrated fit. The
+service reads `DECISIONS_API_KEY` from its environment; pass the value through
+the deployment's secret environment facility, never as a literal in a command
+or file. Without that service, the app keeps graph-based ordering and abstains
+from scoring. Opening lines can still use sourced templates.
 
-Enter the same requester token on the replay laptop for meeting and memory-aware
-steps. Enter each owner's token on that owner's page for pending requests and
-grant approvals in replay mode. Recordings contain only token hashes.
+For a full journey, select a requester, target and goal; inspect a supported
+route; ask an owner for reachability; have that owner approve; ask again; then
+request route reveal and approve it separately. Review the sources and fit
+label before sending an intro request. Sending records an app request and does
+not send an external message. Each request permits one owner-rooted reveal;
+grants expire after 15 minutes.
 
-From the repo on the laptop:
+Private first-hop meeting information is used only when the request opts into
+memory and the same API call includes the requester's token. Request IDs act as
+bearer access in this demo. A route already revealed remains visible in that
+request if consent is later revoked.
+
+## Record and replay a demo
+
+Recordings can contain request IDs, source facts and approved route details.
+Keep them local and use only a consented demo. Start a live recording with a
+new, empty directory. Stop the public-trial server first and choose a new
+recording path if that directory already contains files:
 
 ```sh
-python3 -S -m warmopen.cli serve --host 127.0.0.1 --port 8080 --replay recordings/demo
+docker compose stop web
+mkdir recordings/demo
+docker compose run --rm --service-ports -v "$PWD/recordings/demo:/recordings" web python -m warmopen.cli serve --host 0.0.0.0 --port 8080 --record /recordings
 ```
 
-Open `http://127.0.0.1:8080` and the owner page in the second browser. Every JSON
-response sets mode to recorded; both pages display **Recorded run**. Replay
-matches method, path, and parsed JSON body, independent of object key order.
-Repeat the same picks and actions as the rehearsal. Request ids come from the
-recorded creation response. A different pick or missing recording returns
-`not in recording`. Restart the server to reset replay consumption.
-
-Each matching response is consumed in filename order. Request-detail polling
-keeps returning its last response after exhaustion; other endpoints are finite,
-including owner pending polls. Every authenticated response requires the same
-requester or owner token used during recording.
-Replay presents the saved responses, including any saved failed approvals. It
-does not create grants or contact a database or provider.
-
-## Pre-demo checklist
-
-- Load the curated seed with the CLI and verify printed graph counts.
-- Verify owner ids and tokens in a second browser, and test both grant scopes.
-- Run `python3 -m pytest -q tests` in Daytona against live FalkorDB.
-- Confirm public sources, fit wording, three opener cards, and timeline polling.
-- Rehearse at 1280 px and phone width. Select source links and test one reveal only.
-- Record the full loop; copy it locally and rehearse replay with external network off.
-- Keep the phone hotspot ready, then use laptop replay if the preview remains unavailable.
-
-Local checks without a graph or network:
+Stop the live service before replay:
 
 ```sh
-python3 -m compileall -q warmopen
-python3 -S -m scripts.check_offline
-grep -rnE '<script[^>]+src="https?:|<link[^>]+href="https?:' warmopen/static
-grep -rniE 'probability|innerHTML' warmopen/static
+docker compose stop web
+docker compose run --no-deps --rm --service-ports -v "$PWD/recordings/demo:/recordings:ro" web python -S -m warmopen.cli serve --host 0.0.0.0 --port 8080 --replay /recordings
 ```
 
-The two grep checks must print nothing (exit 1 means no match). Compilation and
-offline checks do not replace the live graph gate or the two-browser rehearsal.
+Replay needs no graph or Decisions service. Repeat the recorded actions,
+including target and conference selections. Authenticated calls require the
+same token used during recording; recording files contain a credential hash,
+not the token. Both pages display **Recorded run**.

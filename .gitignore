@@ -1,11 +1,9 @@
 recordings/
 data/seed.json
 .env
+.env.*
 __pycache__/
 *.pyc
 .pytest_cache/
-*-launch.json
-*-intent.json
-*-astra-build.log
-*-astra-build-final.md
 *.pid
+*.log

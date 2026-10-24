@@ -9,10 +9,11 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 _STATIC = Path(__file__).with_name("static")
 _REQUEST = re.compile(r"/api/requests/([^/]+)(?:/([^/]+))?\Z")
+_CONFERENCE_PEOPLE = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/people\Z")
 
 
 def _reject_constant(value):
@@ -107,6 +108,18 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
             raise ValueError("Required string fields: " + ", ".join(names))
         return values
 
+    if method == "GET" and urlsplit(path).path == "/api/meet":
+        from .meet import who_to_meet
+
+        query = parse_qs(urlsplit(path).query, keep_blank_values=True)
+        if any(len(query.get(key, [])) != 1 or not query[key][0].strip()
+               for key in ("requester", "goal")):
+            raise ValueError("Required query fields: requester, goal")
+        requester, goal = query["requester"][0], query["goal"][0]
+        with store.lock:
+            if token is not None:
+                consent._authenticate(store, requester, token)
+            return {"items": who_to_meet(store, requester, goal, include_own=token is not None)}
     if method == "GET" and path == "/api/targets":
         rows = store.query(store.event(),
                            "MATCH (p:Person) WHERE p.kind = 'speaker' RETURN p.id, p.name").result_set
@@ -118,6 +131,38 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
             target = targets.setdefault(pid, {"id": pid, "name": name, "talks": []})
             target["talks"].append({"title": title, "conference": conference, "starts": starts})
         return {"items": sorted(targets.values(), key=lambda item: (item["name"] or "", item["id"]))}
+    if method == "GET" and path == "/api/try/people":
+        from .tryflow import public_example, public_people
+
+        items = public_people(store)
+        return {"items": items, "example": public_example(store, items)}
+    if method == "GET" and path == "/api/conferences":
+        from .directory import list_conferences
+
+        items = list_conferences(store)
+        citations = [{"evidence_id": eid} for item in items for eid in item.get("evidence_ids", [])]
+        return _presentation(store, {"items": items}, citations=citations)
+    if method == "GET" and _CONFERENCE_PEOPLE.fullmatch(path):
+        from .directory import conference_people
+
+        conference_id = _CONFERENCE_PEOPLE.fullmatch(path)[1]
+        result = conference_people(store, conference_id)
+        citations = [{"evidence_id": eid}
+                     for collection in ("confirmed_attendees", "scheduled_speakers")
+                     for person in result[collection] for eid in person.get("evidence_ids", [])]
+        return _presentation(store, result, citations=citations)
+    if method == "POST" and path == "/api/try":
+        from .tryflow import explore_public
+
+        if set(body) != {"source", "target", "action"}:
+            raise ValueError("Expected source, target, and action fields")
+        source, target, action = fields("source", "target", "action")
+        result = explore_public(store, source, target, action)
+        citations = list(result.get("openers", []))
+        citations.extend({"evidence_id": edge["other_evidence_id"]}
+                         for route in result["routes"] for edge in route["edges"]
+                         if edge.get("other_evidence_id"))
+        return _presentation(store, result, result["routes"], citations)
     if method == "GET" and path == "/api/people":
         rows = store.query(store.event(),
                            "MATCH (p:Person) WHERE p.consented = true AND p.kind = 'attendee' "
@@ -185,6 +230,42 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
                 include_own = own_allowed(store, get_request(store, rid), token, recording)
                 items = generate_openers(store, rid, llm, include_own=include_own)
                 return _presentation(store, {"items": items}, citations=items)
+            if action == "plan":
+                from .target_plan import conference_options, future_conferences, plan_conference
+
+                request = get_request(store, rid)
+                include_own = own_allowed(store, request, token, recording)
+                nearby = body.get("nearby", False)
+                could_not_connect = body.get("could_not_connect", False)
+                if type(nearby) is not bool or type(could_not_connect) is not bool:
+                    raise ValueError("Journey flags must be booleans")
+                options = conference_options(store, request["target"], timing_filter="current")
+                conference_id = body.get("conference_id")
+                if conference_id is not None and (not isinstance(conference_id, str) or not conference_id.strip()):
+                    raise ValueError("Invalid conference id")
+                if conference_id and not any(item["id"] == conference_id for item in options):
+                    raise ValueError("Conference is not a current target appearance")
+                plan = (plan_conference(store, request, conference_id, jev=jev, include_own=include_own)
+                        if conference_id and not nearby and not could_not_connect else None)
+                future = (future_conferences(store, request, include_own=include_own)
+                          if could_not_connect and not nearby else [])
+                openers = (generate_openers(store, rid, llm, include_own=include_own) if nearby else [])
+                routes = (plan["routes"] if plan else []) + [route for item in future for route in item["routes"]]
+                citations = list(options)
+                if plan and plan.get("conference"):
+                    citations.append(plan["conference"])
+                for item in future:
+                    if item.get("conference"):
+                        citations.append(item["conference"])
+                for route in routes:
+                    citations.extend(route.get("intermediaries", []))
+                    citations.extend({"evidence_id": edge["other_evidence_id"]}
+                                     for edge in route["edges"] if edge.get("other_evidence_id"))
+                citations.extend(openers)
+                return _presentation(store, {"conferences": options, "plan": plan,
+                                             "future": future, "nearby": nearby,
+                                             "could_not_connect": could_not_connect,
+                                             "openers": openers}, routes, citations)
             if action == "send":
                 with store.lock:
                     request = get_request(store, rid)
@@ -224,7 +305,7 @@ class _Replay:
 
 
 def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None,
-                record_dir=None, recordings_dir=None) -> ThreadingHTTPServer:
+                record_dir=None, recordings_dir=None, public_landing=False) -> ThreadingHTTPServer:
     """Build a server without starting its loop; replay never consults the store."""
     if mode not in ("live", "recorded"):
         raise ValueError("Unknown server mode")
@@ -275,7 +356,7 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
                     # Capture every successful authentication, even if later work fails.
                     context = _auth_recording.set(recording)
                     try:
-                        result = _live(store, self.command, path, body,
+                        result = _live(store, self.command, self.path if path == "/api/meet" else path, body,
                                        self.headers.get("X-Owner-Token"), jev, llm, recording)
                     finally:
                         _auth_recording.reset(context)
@@ -295,7 +376,7 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
                         status = 404
                 result = {"error": str(exc) if status != 500 else "Internal server error"}
                 token = self.headers.get("X-Owner-Token")
-                if token and path in ("/api/meetings", "/api/requests"):
+                if token and path in ("/api/meet", "/api/meetings", "/api/requests"):
                     result["error"] = result["error"].replace(token, "[redacted]")
             result["mode"] = mode
             data = json.dumps(result, allow_nan=False).encode("utf-8")
@@ -316,7 +397,9 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
             path = unquote(urlsplit(self.path).path)
             if path.startswith("/api/"):
                 return self._api(path)
-            name = {"/": "index.html", "/owner": "owner.html"}.get(path)
+            name = {"/": "conferences.html" if public_landing else "index.html",
+                    "/workspace": "index.html", "/owner": "owner.html", "/try": "conferences.html",
+                    "/explore": "try.html", "/start": "start.html"}.get(path)
             if path.startswith("/static/"):
                 name = path[len("/static/"):]
             if self.command == "GET" and name and ".." not in Path(name).parts:

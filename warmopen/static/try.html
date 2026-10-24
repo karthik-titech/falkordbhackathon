@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Public graph exploration</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/welcome.css">
+  <script src="/static/brand.js"></script>
+  <script src="/static/try.js" defer></script>
+</head>
+<body class="public-try explore-page">
+  <header>
+    <p id="try-kicker">PUBLIC GRAPH EXPLORATION</p>
+    <div class="header-meta"><p><span id="try-product-name"></span></p><a href="/workspace">Introduction workspace</a></div>
+  </header>
+  <main>
+    <section id="conference-context" class="conference-context" hidden aria-live="polite">
+      <a href="/try" class="quiet-link">← Conference directory</a>
+      <h1 id="explore-conference-title"></h1>
+      <p id="explore-conference-dates" class="quiet-copy"></p>
+      <div class="directory-people-grid">
+        <section><h2>Confirmed attendees</h2><div id="explore-attendees"></div></section>
+        <section><h2>Scheduled speakers</h2><div id="explore-speakers"></div></section>
+      </div>
+      <p class="quiet-copy">Scheduled speakers are not confirmed attendees. Public profile links entered on the previous page are not looked up or matched.</p>
+    </section>
+    <div class="slide-heading">
+      <h1>Explore public connections.</h1>
+      <p id="try-subline">Choose two public profiles to inspect cited graph paths.</p>
+    </div>
+    <section class="panel try-panel" aria-labelledby="try-heading">
+      <h2 id="try-heading">Explore public connections between</h2>
+      <p class="claim">The selected profile is only a graph starting point. This read-only page does not sign you in, record meetings, request an introduction, or check physical presence.</p>
+      <form id="try-form" class="try-pickers">
+        <label>Filter starting profiles<input id="try-source-filter" type="search" placeholder="Name"></label>
+        <label>Starting profile<select id="try-source" required></select></label>
+        <label>Filter target profiles<input id="try-target-filter" type="search" placeholder="Name"></label>
+        <label>Target profile<select id="try-target" required></select></label>
+        <div class="try-actions">
+          <button id="try-paths" type="submit">Find public paths</button>
+          <button id="try-openers" type="button">Create sourced openers</button>
+          <button id="try-example" type="button">Try a cited example</button>
+        </div>
+      </form>
+      <p class="claim">The example uses an existing cited public co-speaker or shared-work link.</p>
+    </section>
+    <p id="try-status" class="claim" role="status" aria-live="polite">Loading public profiles…</p>
+    <section id="try-path-results" class="panel" aria-live="polite"></section>
+    <section id="try-opener-results" class="panel" aria-live="polite"></section>
+  </main>
+</body>
+</html>

@@ -1,12 +1,14 @@
 """Idempotent conference loading with evidence partitioned by visibility."""
 
 import hashlib
+from urllib.parse import urlsplit
 
 from .ties import tie_strength
 
 _NODES = {
     "people": ("Person", ("id", "name", "handle", "kind", "consented")),
     "talks": ("Talk", ("id", "title", "conference", "starts", "room")),
+    "conferences": ("Conference", ("id", "name", "starts", "ends", "venue")),
     "topics": ("Topic", ("id", "name")),
     "repos": ("Repo", ("id", "full_name")),
     "companies": ("Company", ("id", "name", "needs", "sectors", "topics")),
@@ -21,6 +23,7 @@ _FACTS = {
     "WORKS_AT": ("Person", "Company"), "PARTNER_AT": ("Person", "Fund"),
     "FOUNDED": ("Person", "Startup"),
     "INVESTED_IN": ("Fund", "Company"), "ENJOYS": ("Person", "Interest"),
+    "ATTENDS": ("Person", "Conference"),
 }
 _EVIDENCE_FIELDS = ("id", "url", "claim", "observed_at", "visibility")
 _CATEGORIES = ("colleague", "coauthor", "friend", "met")
@@ -28,6 +31,23 @@ _CATEGORIES = ("colleague", "coauthor", "friend", "met")
 
 def _evidence_id(record):
     return record.get("evidence_id", record.get("evidence"))
+
+
+def _confirmed_attendance(item, evidence):
+    """Only load an attendance fact with a confirmed public professional citation."""
+    if item.get("confirmed") is not True:
+        return False
+    source = evidence.get(_evidence_id(item))
+    if not source or source.get("visibility") != "public":
+        return False
+    url, claim = source.get("url"), source.get("claim")
+    if not isinstance(url, str) or not url.strip() or not isinstance(claim, str) or not claim.strip():
+        return False
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ("https", "http") and bool(parsed.netloc)
 
 
 def _node(store, graph, label, properties):
@@ -127,6 +147,13 @@ def load_seed(store, seed: dict) -> dict:
             for topic in company.get("topics", []):
                 _edge(store, event, "ABOUT", "Company", company["id"], "Topic", topic)
         for item in seed.get("edges", []):
+            if item["type"] == "ATTENDS" and not _confirmed_attendance(item, evidence):
+                # A refreshed fact can withdraw an earlier confirmation.
+                store.query(event,
+                            "MATCH (:Person {id: $person})-[r:ATTENDS]->"
+                            "(:Conference {id: $conference}) DELETE r",
+                            {"person": item["from"], "conference": item["to"]})
+                continue
             if item["type"] in ("INVESTED_IN", "ENJOYS"):
                 source = evidence[_evidence_id(item)]
                 if (_evidence_id(item) not in public_evidence or source.get("visibility") != "public"
@@ -134,6 +161,10 @@ def load_seed(store, seed: dict) -> dict:
                         or not isinstance(source.get("claim"), str) or not source["claim"].strip()):
                     continue
             props = {key: item[key] for key in ("role", "round", "lead") if key in item}
+            if item["type"] == "ATTENDS":
+                props["confirmed"] = True
+            if item["type"] == "INVESTED_IN" and "announced" in item:
+                props["announced"] = item["announced"]
             fact(item["type"], item["from"], item["to"], _evidence_id(item), props)
 
         private_nodes = private_edges = 0

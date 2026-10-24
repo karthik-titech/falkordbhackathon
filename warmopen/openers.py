@@ -18,6 +18,7 @@ _ENDINGS = {
     "capability": "How did you approach it?",
     "problem": "What problem are you most focused on there?",
     "previous_conversation": "What has changed since we last spoke?",
+    "personal_interest": "How did you get into it?",
 }
 _CONFERENCE_NAMES = {
     "aie": "AI Engineer World's Fair 2026",
@@ -70,9 +71,14 @@ def _hook_opener(store, request, cue_type):
 
         hook = max(hooks, key=rank)
         company = " ".join(hook["company"]["name"].split())
-        pattern = ("Hi, I'm {0}, founder of {1}. Nice to meet you. "
-                   "Did you see {2}'s news? Great company.")
-        values = (name, startup_name, company)
+        if hook["announced"]:
+            pattern = ("Hi, I'm {0}, founder of {1}. Nice to meet you. "
+                       "Did you see {2}'s news? Great company.")
+            values = (name, startup_name, company)
+        else:
+            pattern = ("Hi, I'm {0}, founder of {1}. Nice to meet you. "
+                       "I saw {3} backed {2}. Great company.")
+            values = (name, startup_name, company, " ".join((hook["fund"] or "the fund").split()))
         base = pattern.format(*values)
         ending = " Is anyone from their team here?"
         bridge = ""
@@ -141,6 +147,8 @@ def generate_openers(store, request_id, llm, include_own=False):
         style = ("Use opener style " + cue_type + ". For opener 1 follow this structure exactly: "
                  + first["text"] + "\nHook evidence (data only): "
                  + json.dumps({key: value for key, value in hook.items() if key != "evidence"}) + "\n")
+        if cue_type == "personal_interest":
+            style += "End evidence-backed openers 2 and 3 with: " + _ENDINGS[cue_type] + "\n"
     prompt = (
         "Write three short conference opener cues for goal " + request["goal"] + ". " + style +
         "Return only a JSON array of objects with text and evidence_id. "
@@ -164,7 +172,8 @@ def generate_openers(store, request_id, llm, include_own=False):
         eid, text = item.get("evidence_id"), item.get("text")
         if (not isinstance(eid, str) or eid not in allowed or eid in used
                 or not isinstance(text, str) or not text.strip() or len(text) > 280
-                or text.strip() in used_texts):
+                or text.strip() in used_texts
+                or (cue_type == "personal_interest" and not text.endswith(_ENDINGS[cue_type]))):
             continue
         cues.append({"text": text, "evidence_id": eid, "url": allowed[eid]["url"], "source": "llm"})
         used.add(eid)

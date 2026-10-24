@@ -47,6 +47,28 @@ button:hover:enabled { outline: 1.5px solid var(--olive); outline-offset: 3px; }
 label { display: grid; gap: 8px; min-width: 0; color: var(--ink); line-height: 1.5; }
 .panel { margin-bottom: 28px; min-width: 0; }
 .pickers { display: grid; grid-template-columns: 1fr 1fr 1.4fr 1fr auto; gap: 18px; align-items: end; }
+.journey-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
+.journey-controls > label:first-child { flex: 1 1 220px; }
+.journey-controls .nearby-flag { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 10px; min-height: 44px; }
+.journey-controls .nearby-flag input { width: 20px; min-height: 20px; margin: 0; accent-color: var(--olive); }
+.journey-result { border-top: 1.5px solid var(--rule); padding: 18px 0; margin-top: 18px; }
+.journey-result h3 { margin-bottom: 12px; }
+.journey-route { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; border-top: 1px solid var(--muted); padding: 14px 0; }
+.journey-route p { margin: 0; }
+.journey-route a { flex: 1 1 100%; }
+.journey-route button { text-transform: none; letter-spacing: 0; font-family: inherit; font-size: 16px; }
+.public-try { min-height: 100vh; }
+.public-try #try-kicker { color: var(--olive); font: 11px var(--mono); letter-spacing: .16em; }
+.try-panel { border-top: 1.5px solid var(--rule); padding-top: 22px; }
+.try-pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: end; margin-top: 24px; }
+.try-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; }
+.try-route, .try-cue { border-top: 1.5px solid var(--rule); padding: 20px 0; }
+.try-route h3 { text-transform: none; letter-spacing: 0; font: 700 20px/1.35 -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif; }
+.try-route p { overflow-wrap: anywhere; }
+.try-cue > p:first-child { font-size: 20px; color: var(--ink); }
+@media (max-width: 700px) {
+  .try-pickers { grid-template-columns: minmax(0, 1fr); }
+}
 .meeting-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 14px; align-items: end; }
 #owner-form { grid-template-columns: 1fr 1fr auto; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 32px; }
@@ -84,6 +106,17 @@ label { display: grid; gap: 8px; min-width: 0; color: var(--ink); line-height: 1
 .fit-reasons .against { color: var(--ink); }
 .fit-reasons .would_improve, .fit-reasons .would_improve h3 { color: var(--muted); }
 .reason-marker { font-size: 16px; margin-right: 8px; }
+#meet-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.meet-column { min-width: 0; }
+.meet-column h3 { line-height: 1.6; overflow-wrap: anywhere; }
+.meet-target h3 { color: var(--olive); }
+.meet-person { padding: 12px 0; border-bottom: 1px solid var(--muted); }
+.meet-person button { font-family: inherit; font-size: 18px; text-transform: none; letter-spacing: 0; text-align: left; overflow-wrap: anywhere; }
+.meet-person .claim { margin: 8px 0; }
+.meet-person a, .meet-column summary { font: 11px var(--mono); }
+.meet-column details { margin-top: 18px; }
+.meet-column summary { cursor: pointer; min-height: 44px; padding: 12px 0; }
+.meet-column pre { font: 11px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 #pending > article { border-top: 1.5px solid var(--rule); padding-top: 24px; }
 #pending h2 { font-family: inherit; font-size: 26px; text-transform: none; letter-spacing: -0.03em; font-weight: 800; }
@@ -141,6 +174,7 @@ label { display: grid; gap: 8px; min-width: 0; color: var(--ink); line-height: 1
   .timeline-panel { margin-top: 24px; }
   #step-track { left: 16px; right: 16px; font-size: 10px; letter-spacing: 0.04em; }
   .metric { font-size: 28px; }
+  #meet-columns { grid-template-columns: minmax(0, 1fr); }
   #pending .actions { flex-direction: column; }
   #requester-view header, #requester-view main { padding-left: 16px; padding-right: 16px; }
   #requester-view .pickers, #requester-view .meeting-row { grid-template-columns: minmax(0, 1fr); }

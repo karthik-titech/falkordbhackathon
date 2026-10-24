@@ -1,0 +1,29 @@
+services:
+  graph:
+    image: falkordb/falkordb
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - public-graph:/data
+  web:
+    build: .
+    depends_on:
+      graph:
+        condition: service_healthy
+    environment:
+      FALKORDB_HOST: graph
+      FALKORDB_PORT: "6379"
+    ports:
+      - "127.0.0.1:8080:8080"
+    command:
+      - sh
+      - -c
+      - >-
+        python -m warmopen.cli load /app/data/seed_public.json &&
+        exec python -m warmopen.cli serve --host 0.0.0.0 --port 8080 --public-trial
+
+volumes:
+  public-graph:

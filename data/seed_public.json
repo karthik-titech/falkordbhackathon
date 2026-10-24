@@ -13682,11 +13682,6 @@
    "needs": []
   },
   {
-   "id": "co_daytona",
-   "name": "Daytona",
-   "needs": []
-  },
-  {
    "id": "co_engram",
    "name": "Engram",
    "needs": []
@@ -16256,13 +16251,6 @@
    "to": "co_qodo",
    "role": "Co-Founder & CEO",
    "evidence": "ev_spk_itamar_friedman"
-  },
-  {
-   "type": "WORKS_AT",
-   "from": "ivan_burazin",
-   "to": "co_daytona",
-   "role": "CEO",
-   "evidence": "ev_spk_ivan_burazin"
   },
   {
    "type": "WORKS_AT",
@@ -24021,13 +24009,6 @@
    "observed_at": "2026-10-24",
    "visibility": "public",
    "claim": "Itamar Friedman is Co-Founder & CEO at Qodo (AI Engineer World's Fair 2026 speaker list)"
-  },
-  {
-   "id": "ev_spk_ivan_burazin",
-   "url": "https://ai.engineer/worldsfair/2026/speakers",
-   "observed_at": "2026-10-24",
-   "visibility": "public",
-   "claim": "Ivan Burazin is CEO at Daytona (AI Engineer World's Fair 2026 speaker list)"
   },
   {
    "id": "ev_spk_ivan_leo",

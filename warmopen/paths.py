@@ -4,6 +4,26 @@ from collections import defaultdict
 
 from .requests import _person
 
+WARM_LINKS_CYPHER = (
+    "MATCH (a:Person)-[r:COAUTHORED]-(b:Person) "
+    "RETURN a.id AS source, b.id AS destination, "
+    "'coauthor' AS category, r.evidence_id AS evidence "
+    "UNION "
+    "MATCH (a:Person)-[r:CONTRIBUTED_TO|MAINTAINS]->(work:Repo)"
+    "<-[:CONTRIBUTED_TO|MAINTAINS]-(b:Person) WHERE a.id <> b.id "
+    "RETURN a.id AS source, b.id AS destination, "
+    "'shared_work' AS category, r.evidence_id AS evidence "
+    "UNION "
+    "MATCH (a:Person)-[r:SPEAKS_AT]->(talk:Talk)<-[:SPEAKS_AT]-(b:Person) "
+    "WHERE a.id <> b.id "
+    "RETURN a.id AS source, b.id AS destination, "
+    "'co_speaker' AS category, r.evidence_id AS evidence"
+)
+OWN_LINKS_CYPHER = (
+    "MATCH (:Person {id: $requester})-[r:KNOWS]->(b:Person) "
+    "RETURN b.id, r.category"
+)
+
 
 def public_paths(store, requester, target, max_hops=3, k=3, include_own=False) -> list[dict]:
     _person(store, requester)
@@ -11,20 +31,8 @@ def public_paths(store, requester, target, max_hops=3, k=3, include_own=False) -
     if max_hops < 1 or k < 1 or requester == target:
         return []
     # The graph derives person-to-person links from their supporting public facts.
-    links = store.query(store.event(),
-                        "MATCH (a:Person)-[r:COAUTHORED]-(b:Person) "
-                        "RETURN a.id AS source, b.id AS destination, "
-                        "'coauthor' AS category, r.evidence_id AS evidence "
-                        "UNION "
-                        "MATCH (a:Person)-[r:CONTRIBUTED_TO|MAINTAINS]->(work:Repo)"
-                        "<-[:CONTRIBUTED_TO|MAINTAINS]-(b:Person) WHERE a.id <> b.id "
-                        "RETURN a.id AS source, b.id AS destination, "
-                        "'shared_work' AS category, r.evidence_id AS evidence "
-                        "UNION "
-                        "MATCH (a:Person)-[r:SPEAKS_AT]->(talk:Talk)<-[:SPEAKS_AT]-(b:Person) "
-                        "WHERE a.id <> b.id "
-                        "RETURN a.id AS source, b.id AS destination, "
-                        "'co_speaker' AS category, r.evidence_id AS evidence").result_set
+    links = store.query(store.event(), WARM_LINKS_CYPHER,
+                        {"requester": requester}).result_set
     adjacency = defaultdict(list)
     best_links = {}
     for source, destination, category, evidence in links:
@@ -40,9 +48,8 @@ def public_paths(store, requester, target, max_hops=3, k=3, include_own=False) -
         public_ids = {row[0] for row in store.query(
             store.event(), "MATCH (p:Person) WHERE p.kind IS NOT NULL RETURN p.id",
         ).result_set}
-        own = store.query(store.private(requester),
-                          "MATCH (:Person {id: $requester})-[r:KNOWS]->(b:Person) "
-                          "RETURN b.id, r.category", {"requester": requester}).result_set
+        own = store.query(store.private(requester), OWN_LINKS_CYPHER,
+                          {"requester": requester}).result_set
         destinations = {edge["to"] for edge in first_hops}
         for destination, category in sorted(set(map(tuple, own))):
             if destination in public_ids and destination not in destinations:

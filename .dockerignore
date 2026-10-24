@@ -1,0 +1,13 @@
+*
+!Dockerfile
+!pyproject.toml
+!warmopen/
+!warmopen/**
+!tests/
+!tests/**
+!data/
+!data/seed_public.json
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*
