@@ -8,6 +8,8 @@ let graphYaw = -0.35, graphPitch = 0.28, graphPointer = null, suppressGraphClick
 let conferenceTopics = [], interestTopicIds = new Set(), seekingTopicIds = new Set(), profileTopicContext = null;
 let conversationResults = new Map(), conversationBusy = false;
 let peopleMatchesKey = "", peopleMatchesRequest = 0, initialRecommendationChosen = false;
+let peopleMatchScores = new Map();
+const DEFAULT_CATEGORY_SCORES = {mirror: 30, missing_piece: 25, unexpected_connection: 20};
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const GRAPH_LIMIT = 48;
@@ -277,14 +279,26 @@ function renderGraphDetail(personId) {
   container.append(background);
 }
 
-function conversationKey(targetId) {
-  return JSON.stringify([
-    graphSourceId(),
-    targetId,
-    Array.from(interestTopicIds).sort(),
-    Array.from(seekingTopicIds).sort(),
-  ]);
+function matchContext() {
+  return {source: graphSourceId(), interest_topic_ids: Array.from(interestTopicIds).sort(),
+    seeking_topic_ids: Array.from(seekingTopicIds).sort()};
 }
+function invalidateMatchViews() {
+  peopleMatchesRequest += 1;
+  peopleMatchesKey = "";
+  conversationResults.clear();
+  peopleMatchScores.clear();
+  if (conferenceGraph) renderGraphDetail(conferenceGraph.center_id);
+  for (const prefix of ["mirror", "missing", "unexpected"]) {
+    $(`${prefix}-count`).textContent = "…";
+    $(`${prefix}-people`).replaceChildren(node("p", "Updating for your current interests and starting profile…", "people-match-empty"));
+  }
+  loadPeopleMatches();
+}
+function conversationKey(targetId) {
+  return JSON.stringify([targetId, matchContext()]);
+}
+
 function confidenceCopy(value) {
   return typeNumber(value) && value >= 0 && value <= 1
     ? `Confidence: ${Math.round(value * 100)}%` : "Confidence unavailable";
@@ -371,15 +385,18 @@ function renderConversationResult(container, data) {
         unexpected_connection: "Unexpected connection", unknown: "Needs context"};
       const title = node("span", `${index + 1}. ${labels[type]}`, "graph-category-title");
       const categoryModelScore = boundedScore(category.score);
-      const categoryRoughScore = boundedScore(category.rough_score);
+      const sharedStartingScore = peopleMatchScores.get(`${data.target}:${type}`);
+      const categoryRoughScore = boundedScore(sharedStartingScore === undefined ? category.rough_score : sharedStartingScore);
       const categoryScore = categoryModelScore === null ? categoryRoughScore : categoryModelScore;
-      const scoreText = categoryScore === null ? "Needs context"
-        : `${categoryModelScore === null ? "~" : ""}${Math.round(categoryScore)}/100`;
+      const useDefault = (category.supported === false && sharedStartingScore === undefined) || categoryScore === null || categoryScore <= 0;
+      const shownScore = useDefault ? (DEFAULT_CATEGORY_SCORES[type] || 20) : Math.round(categoryScore);
+      const scoreText = `${useDefault || categoryModelScore === null ? "~" : ""}${shownScore}/100`;
       row.append(title, node("span", scoreText, "graph-category-score"));
+      if (useDefault) row.append(node("p", "Default starting estimate · add profile interests to personalize.", "graph-category-reason"));
       const reason = Array.isArray(category.reasons)
         ? category.reasons.find(item => typeof item === "string" && item.trim()
           && item.trim().toLowerCase() !== "needs context.") : null;
-      if (reason) row.append(node("p", reason.trim().slice(0, 180), "graph-category-reason"));
+      if (reason && !useDefault) row.append(node("p", reason.trim().slice(0, 180), "graph-category-reason"));
       list.append(row);
     }
     details.append(list);
@@ -506,8 +523,9 @@ async function assessConversation(targetId, refresh) {
   if ((sourceId && sourceId === targetId) || !conferenceId || conversationBusy) return;
   conversationBusy = true;
   const requestKey = conversationKey(targetId);
-  const requestedInterests = Array.from(interestTopicIds);
-  const requestedSeeking = Array.from(seekingTopicIds);
+  const context = matchContext();
+  const requestedInterests = context.interest_topic_ids;
+  const requestedSeeking = context.seeking_topic_ids;
   const requestIsCurrent = () => requestKey === conversationKey(targetId)
     && conferenceGraph?.center_id === targetId && $("graph-focus").value === targetId;
   const status = $("graph-person-detail").querySelector(".graph-action-status");
@@ -616,6 +634,7 @@ function graphWithTopics(base) {
   const own = profileTopicContext?.profile_session;
   const ownSelected = own && $("graph-my-profile").value === `self:${own.id}`;
   const nodes = base.nodes.slice(), edges = base.edges.slice();
+  const showTopics = $("graph-show-topic-nodes").checked;
   const target = nodes.find(n => n.id === base.center_id);
   const topicMap = new Map();
   for (const topic of conferenceTopics) topicMap.set(topic.id, topic);
@@ -624,7 +643,7 @@ function graphWithTopics(base) {
   const wanted = Array.from(new Set([
     ...ownTopics.map(t => t.id), ...(target?.topics || []).map(t => t.id),
   ])).slice(0, 16);
-  for (const id of wanted) {
+  for (const id of showTopics ? wanted : []) {
     const topic = topicMap.get(id);
     if (!topic) continue;
     nodes.push({id: `topic:${id}`, name: topic.name, roles: ["topic"], kind: "topic", topics: [],
@@ -641,14 +660,25 @@ function graphWithTopics(base) {
     const ownId = `self:${own.id}`;
     nodes.push({id: ownId, name: "You", roles: ["self"], kind: "self", topics: ownTopics,
       distance: 2, connection_type: null});
-    for (const topic of ownTopics.filter(t => wanted.includes(t.id))) {
-      edges.push({source: ownId, target: `topic:${topic.id}`, category: "interest", evidence_ids: [],
-        basis: "your_selected_interests"});
+    if (showTopics) {
+      for (const topic of ownTopics.filter(t => wanted.includes(t.id))) {
+        edges.push({source: ownId, target: `topic:${topic.id}`, category: "interest", evidence_ids: [],
+          basis: "your_selected_interests"});
+      }
+    } else {
+      for (const person of base.nodes) {
+        const sharedTopics = (person.topics || []).filter(topic => interestTopicIds.has(topic.id));
+        if (sharedTopics.length) edges.push({source: ownId, target: person.id, category: "interest",
+          evidence_ids: Array.from(new Set(sharedTopics.flatMap(topic => topic.evidence_ids || []))),
+          basis: "shared_interest", topic_names: sharedTopics.map(topic => topic.name)});
+      }
     }
     const shared = ownTopics.find(t => (target?.topics || []).some(other => other.id === t.id));
-    route = shared ? {status: "ok", persons: [ownId, `topic:${shared.id}`, base.center_id], hops: 2,
-      basis: "shared_interest", edges: edges.filter(e => e.category === "interest"
-        && e.target === `topic:${shared.id}` && [ownId, base.center_id].includes(e.source))}
+    const persons = showTopics ? [ownId, `topic:${shared?.id}`, base.center_id] : [ownId, base.center_id];
+    route = shared ? {status: "ok", persons, hops: showTopics ? 2 : 1, basis: "shared_interest",
+      edges: edges.filter(e => e.category === "interest" && (showTopics
+        ? e.target === `topic:${shared.id}` && [ownId, base.center_id].includes(e.source)
+        : e.source === ownId && e.target === base.center_id))}
       : {status: "no_supported_path", persons: [], hops: null, edges: [], basis: "shared_interest"};
     source = ownId;
   }
@@ -690,7 +720,7 @@ function renderShortestPath() {
     trail.append(chip);
   }
   area.append(trail, node("p", route.basis === "shared_interest"
-    ? "Highlighted in gold. This connects your selected interest to their cited work; it is not a mutual-contact path."
+    ? "Highlighted in gold. This matches your interests with their cited work; it is not a mutual-contact path."
     : "Highlighted in gold. These are cited public-work connections, not proof of friendship."));
   const sourceIds = Array.from(new Set((route.edges || []).flatMap(edge => edge.evidence_ids || [])))
     .filter(id => evidence[id] && safeHttpUrl(evidence[id].url));
@@ -963,7 +993,8 @@ async function loadPeopleMatches() {
   const conferenceId = new URLSearchParams(window.location.search).get("conference");
   if (!conferenceId) return;
   const source = graphSourceId();
-  const body = {interest_topic_ids: Array.from(interestTopicIds), seeking_topic_ids: Array.from(seekingTopicIds)};
+  const context = matchContext();
+  const body = {interest_topic_ids: context.interest_topic_ids, seeking_topic_ids: context.seeking_topic_ids};
   if (source) body.source = source;
   const key = JSON.stringify([conferenceId, body]);
   if (key === peopleMatchesKey) return;
@@ -979,13 +1010,22 @@ async function loadPeopleMatches() {
     if (request !== peopleMatchesRequest) return;
     Object.assign(evidence, data.evidence || {});
     const items = Array.isArray(data.items) ? data.items.filter(person => ["mirror", "missing_piece", "unexpected_connection"].includes(person.category)) : [];
-    items.sort((a, b) => (b.topics?.length || 0) - (a.topics?.length || 0) || a.name.localeCompare(b.name));
+    peopleMatchScores.clear();
+    for (const person of items) {
+      const topicCount = (person.topics || []).length;
+      const citationCount = new Set(person.evidence_ids || []).size;
+      person.starting_score = Math.min(90, (DEFAULT_CATEGORY_SCORES[person.category] || 20)
+        + Math.min(40, topicCount * 10) + Math.min(10, citationCount * 2));
+      peopleMatchScores.set(`${person.id}:${person.category}`, person.starting_score);
+    }
+    items.sort((a, b) => b.starting_score - a.starting_score || a.name.localeCompare(b.name));
+    const hasContext = Boolean(source || interestTopicIds.size || seekingTopicIds.size);
     const groups = [["mirror", "mirror"], ["missing_piece", "missing"], ["unexpected_connection", "unexpected"]];
     for (const [category, prefix] of groups) {
       const list = $(`${prefix}-people`), matching = items.filter(person => person.category === category);
       list.replaceChildren();
-      $(`${prefix}-count`).textContent = String(matching.length);
-      if (!matching.length) list.append(node("p", "No supported suggestions yet. Adjust your interests or what you are looking for.", "people-match-empty"));
+      $(`${prefix}-count`).textContent = hasContext ? String(matching.length) : "—";
+      if (!matching.length) list.append(node("p", hasContext ? "No supported matches in this category for the current interests and starting profile." : "Not assessed yet. Choose interests or a starting profile to assess matches.", "people-match-empty"));
       for (const person of matching) {
         const card = node("article", undefined, "people-match-card");
         const button = node("button", person.name, "people-match-person");
@@ -1000,7 +1040,11 @@ async function loadPeopleMatches() {
           ? (pair.relation === "related" ? `${pair.source.name} connects to their work on ${pair.target.name}.`
             : `Their cited work on ${pair.target.name} matches ${person.category === "missing_piece" ? "what you need" : "your interests"}.`)
           : person.reason || "Based on cited professional work.";
-        card.append(button, node("p", why, "people-match-reason"));
+        const heading = node("div", undefined, "people-match-card-heading");
+        const score = node("span", `~${person.starting_score}/100`, "person-match-score");
+        score.title = "Uncalibrated starting estimate from matched topics and cited evidence, not a probability.";
+        heading.append(button, score);
+        card.append(heading, node("p", "Uncalibrated starting fit", "person-match-score-label"), node("p", why, "people-match-reason"));
         const chips = node("div", undefined, "person-topics");
         for (const topic of (person.topics || []).slice(0, 3)) chips.append(node("span", topic.name || topic.target?.name || topic.id || "Related topic", "person-topic-chip"));
         card.append(chips);
@@ -1017,6 +1061,7 @@ async function loadPeopleMatches() {
         loadConferenceGraph({focus: recommended.id, query: ""});
       }
     }
+    if (conferenceGraph && conversationResults.has(conversationKey(conferenceGraph.center_id))) renderGraphDetail(conferenceGraph.center_id);
     const unknown = Number.isInteger(data.unclassified_count) ? data.unclassified_count : 0;
     $("people-matches-status").textContent = items.length
       ? `${items.length} suggestions across the conference${unknown ? ` · ${unknown} people need more context` : ""}. Topic-based suggestions are starting points, not friendship predictions.`
@@ -1097,6 +1142,7 @@ function renderTopicChips(container, topicIds, selected, groupName) {
       const conferenceId = new URLSearchParams(window.location.search).get("conference");
       if (conferenceId) {
         persistTopicSelections(conferenceId);
+        invalidateMatchViews();
         loadConferenceGraph({focus: conferenceGraph?.center_id, query: $("graph-search").value.trim()});
       }
     });
@@ -1237,7 +1283,7 @@ $("graph-focus").onchange = () => loadConferenceGraph({
 });
 $("graph-public-comparison").onchange = () => {
   $("graph-my-profile").value = "";
-  if (conferenceGraph) conversationResults.clear();
+  invalidateMatchViews();
   graphSourceChanged();
 };
 $("graph-zoom-in").onclick = () => { graphZoom = Math.min(1.6, graphZoom + 0.15); window.WarmOpenGraphKit?.zoom(1.2); renderConferenceGraph(); };
@@ -1262,10 +1308,11 @@ $("graph-my-profile").onchange = () => {
   const ownSelected = $("graph-my-profile").value.startsWith("self:");
   $("try-source").value = ownSelected ? "" : $("graph-my-profile").value;
   $("graph-public-comparison").checked = !ownSelected && Boolean($("graph-my-profile").value);
-  conversationResults.clear();
+  invalidateMatchViews();
   graphSourceChanged();
 };
 $("graph-layout-mode").onchange = () => renderConferenceGraph();
+$("graph-show-topic-nodes").onchange = () => renderConferenceGraph();
 $("graph-fit-view").onclick = () => window.WarmOpenGraphKit?.fit();
 window.addEventListener("graph-context-node", event => {
   const data = event.detail;

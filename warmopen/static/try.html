@@ -35,7 +35,8 @@
         <details class="graph-map-options">
           <summary>Map options</summary>
           <div class="graph-map-control-grid">
-          <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
+            <label class="graph-topics-toggle"><input id="graph-show-topic-nodes" type="checkbox"> Show topic nodes</label>
+
             <label for="graph-focus">Center on<select id="graph-focus"><option value="">Choose a public profile</option></select></label>
             <label class="graph-compare-toggle"><input id="graph-public-comparison" type="checkbox"> Compare with a public profile</label>
             <div class="graph-zoom" role="group" aria-label="Graph zoom">
@@ -46,6 +47,7 @@
           </div>
         </details>
       </div>
+      <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
       <section id="graph-route-summary" class="graph-route-summary" aria-live="polite"><p>Choose your starting profile to find the shortest connection.</p></section>
       <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
       <details id="graph-topic-picker" class="graph-topic-picker" aria-labelledby="graph-topics-heading">

@@ -9,13 +9,20 @@ const edgePalette = {interest: "#ad94ce", co_speaker: "#4f92cd", shared_work: "#
 let signature = "", queued = null, running = false, initialized = false;
 let lastDimension = "", lastLayout = "", lastWidth = 0, lastHeight = 0;
 
+let fitTimer;
 function fit() {
   if (canvas.hidden) return;
-  const route = queued?.graph.shortest_path;
-  const pathIds = new Set(route?.status === "ok" ? route.persons : []);
-  canvas.zoomToFit(pathIds.size > 1 ? 1.25 : 1.5,
-    pathIds.size > 1 ? node => pathIds.has(node.data?.personId) : undefined);
+  // Keep the whole neighborhood in view; a short path must not fill the camera.
+  canvas.zoomToFit(canvas.getDimension() === "3d" ? 2.1 : 0.9);
+  const maximumAutoZoom = canvas.getDimension() === "3d" ? 0.45 : 1.3;
+  const zoom = canvas.getZoom();
+  if (Number.isFinite(zoom) && zoom > maximumAutoZoom) canvas.zoom(maximumAutoZoom);
 }
+function scheduleFit() {
+  window.clearTimeout(fitTimer);
+  fitTimer = window.setTimeout(fit, 120);
+}
+
 function fallback() {
   canvas.hidden = true;
   basic.style.display = "block";
@@ -45,7 +52,7 @@ async function apply(options) {
       simulation: {chargeStrength: -180, centerStrength: 0.06, warmupTicks: 100},
       interaction: {zoomToFitPadding: 0.16},
       isNodeSelected: node => node.data?.personId === queued?.graph.center_id,
-      eventHandlers: {onNodeClick: node => {
+      eventHandlers: {onEngineStop: scheduleFit, onNodeClick: node => {
         const selected = node.data?.personId;
         if (node.data?.kind === "topic" || node.data?.kind === "self") {
           window.dispatchEvent(new CustomEvent("graph-context-node", {detail: node.data}));
@@ -61,11 +68,12 @@ async function apply(options) {
     lastWidth = width;
     lastHeight = height;
   }
-  if (nextSignature !== signature) {
+  const dataChanged = nextSignature !== signature;
+  if (dataChanged) {
     canvas.setConfig({
       isNodeSelected: node => node.data?.personId === targetId || node.data?.personId === graph.comparison_source,
       isLinkSelected: link => link.data?.onPath === true,
-      dimmed: routeIds.size > 1, dimOpacity: 0.25,
+      dimmed: false, dimOpacity: 1,
       isNodeDimmed: node => !routeIds.has(node.data?.personId),
       isLinkDimmed: link => link.data?.onPath !== true,
     });
@@ -73,7 +81,7 @@ async function apply(options) {
       nodes: graph.nodes.map((n, i) => ({id: i + 1, labels: [n.kind === "topic" ? "Topic" : "Person"], visible: true,
         shape: n.kind === "topic" ? "square" : "circle",
         ...(n.kind === "self" ? {x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 0} : {}),
-        size: n.kind === "topic" ? 24 : n.kind === "self" || n.id === targetId ? 44 : 32,
+        size: n.kind === "topic" ? 12 : n.kind === "self" || n.id === targetId ? 28 : 20,
         color: n.kind === "topic" ? "#af95d0" : n.id === graph.comparison_source ? "#3c83c4" : n.id === targetId ? "#254e3b" : routeIds.has(n.id) ? "#e3a23f" : palette[n.connection_type]
           || (n.roles.includes("confirmed_attendee") ? "#61afc3" : "#e8c174"),
         caption: "name", data: {name: (userSource && n.id === graph.comparison_source ? `You · ${n.name}` : n.name).replace(/[<>&]/g, char => ({"<": "‹", ">": "›", "&": "＆"}[char])), personId: n.id, kind: n.kind || "person", topics: n.topics || []}})),
@@ -97,7 +105,7 @@ async function apply(options) {
     }
   }
   basic.style.display = "none";
-  if (dimensionChanged || routeIds.size > 1) window.setTimeout(fit, 450);
+  if (dimensionChanged || dataChanged) scheduleFit();
   if (lastDimension === dimension) label.textContent = `FalkorDB Canvas · ${lastDimension.toUpperCase()}`;
   document.getElementById("graph-rotate-hint").textContent = lastDimension === "3d"
     ? "Drag empty space to rotate · Scroll to zoom · Right-drag to pan"
