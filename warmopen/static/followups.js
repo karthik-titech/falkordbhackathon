@@ -1,6 +1,6 @@
 "use strict";
 // Private action sessions are kept separate from public profile exploration.
-let privateActionSession = null, followupItems = [], actionBusy = false, voiceRecorder = null;
+let privateActionSession = null, followupItems = [], actionBusy = false;
 const ACTION_SESSION_KEY = "warmopen_action_session_v1";
 async function actionSession(create = true) {
   if (privateActionSession) return privateActionSession;
@@ -45,7 +45,7 @@ function renderFollowups() {
       done.onclick = async () => {
         done.disabled = true;
         try { followupItems = (await followupApi({operation: "done", action_id: item.id})).items; renderFollowups(); if (conferenceGraph) renderConferenceGraph(false, true); }
-        catch (error) { $("voice-assistant-reply").textContent = error.message; done.disabled = false; }
+        catch (error) { $("followup-status").textContent = error.message; done.disabled = false; }
       };
       actions.append(done);
     }
@@ -65,9 +65,9 @@ function renderFollowups() {
 }
 async function loadFollowups() {
   try { followupItems = (await followupApi({operation: "list"}, false)).items; renderFollowups(); if (conferenceGraph) renderConferenceGraph(false, true); }
-  catch (error) { $("voice-assistant-reply").textContent = error.message; }
+  catch (error) { $("followup-status").textContent = error.message; }
 }
-async function saveSpokenFollowup(speak = false) {
+async function saveFollowup() {
   if (actionBusy) return;
   actionBusy = true; $("save-followup").disabled = true;
   try {
@@ -89,47 +89,8 @@ async function saveSpokenFollowup(speak = false) {
     followupItems = result.items; renderFollowups(); if (conferenceGraph) renderConferenceGraph(false, true);
     const item = followupItems.find(item => item.id === result.saved_id);
     const reply = result.reply + (item?.due_at ? ` Reminder set for ${new Date(item.due_at).toLocaleString()}.` : " It’s in your follow-up list; no reminder time is set.");
-    $("voice-assistant-reply").textContent = reply;
+    $("followup-status").textContent = reply;
     $("followup-due").value = "";
-    const playback = listenButton(() => reply); $("voice-reply-playback").replaceChildren(playback);
-    if (speak) playback.querySelector("button").click();
-  } catch (error) { $("voice-assistant-reply").textContent = error.message; }
+  } catch (error) { $("followup-status").textContent = error.message; }
   finally { actionBusy = false; $("save-followup").disabled = false; }
-}
-async function recordFollowup() {
-  if (voiceRecorder) { voiceRecorder.stop(); return; }
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { $("voice-assistant-reply").textContent = "Microphone recording is unavailable here. Type your request below."; return; }
-  const button = $("record-followup"); button.disabled = true;
-  let stream = null;
-  try {
-    stopSpeech();
-    const session = await actionSession();
-    stream = await navigator.mediaDevices.getUserMedia({audio: true});
-    const format = ["audio/webm", "audio/mp4", "audio/ogg"].find(type => MediaRecorder.isTypeSupported(type));
-    if (!format) throw new Error("This browser cannot record a supported audio format. Type your request instead.");
-    const recorder = new MediaRecorder(stream, {mimeType: format});
-    const chunks = []; voiceRecorder = recorder;
-    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-    recorder.onstop = async () => {
-      clearTimeout(timer); stream.getTracks().forEach(track => track.stop()); voiceRecorder = null;
-      button.textContent = "Transcribing…"; button.disabled = true;
-      try {
-        const blob = new Blob(chunks, {type: format});
-        if (!blob.size || blob.size > 5000000) throw new Error("Keep the voice note short, then try again.");
-        const response = await fetch("/api/transcribe", {method: "POST", headers: {"Content-Type": format, "X-Profile-Session": session.id, "X-Owner-Token": session.token}, body: blob});
-        const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not transcribe. Type your request instead.");
-        $("followup-command").value = result.text;
-        await saveSpokenFollowup(true);
-      } catch (error) { $("voice-assistant-reply").textContent = error.message; }
-      finally { button.disabled = false; button.textContent = "🎙 Add a voice note"; }
-    };
-    recorder.start();
-    const timer = setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 20000);
-    button.textContent = "Stop & save"; button.disabled = false;
-    $("voice-assistant-reply").textContent = "Listening… say who to follow up with and how. Tap Stop & save when you’re done (20 seconds max).";
-  } catch (error) {
-    stream?.getTracks().forEach(track => track.stop()); voiceRecorder = null;
-    $("voice-assistant-reply").textContent = error.name === "NotAllowedError" ? "Microphone permission was declined. You can type your request below." : error.message;
-    button.disabled = false; button.textContent = "🎙 Add a voice note";
-  }
 }

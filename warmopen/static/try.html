@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/welcome.css">
   <script src="/static/brand.js"></script>
-  <script src="/static/voice-assistant.js" defer></script>
+  <script src="/static/followups.js" defer></script>
   <script src="/static/try.js" defer></script>
   <script type="module" src="/static/graph-canvas.js"></script>
 </head>
@@ -48,13 +48,12 @@
           </div>
         </details>
       </div>
-      <section id="voice-assistant" class="voice-assistant" aria-labelledby="voice-assistant-heading">
-        <div class="voice-assistant-heading"><div><h2 id="voice-assistant-heading">Tell me what to remember</h2><p>“Remind me to follow up with Andrea Griffiths via LinkedIn—we connected on LinkedIn.”</p></div><button id="record-followup" type="button" class="followup-action">🎙 Add a voice note</button></div>
-        <label for="followup-command">Your request · speak or type</label>
+      <section id="followup-planner" class="followup-planner" aria-labelledby="followup-planner-heading">
+        <div class="followup-planner-heading"><div><h2 id="followup-planner-heading">Save a follow-up</h2><p>“Remind me to follow up with Andrea Griffiths via LinkedIn—we connected on LinkedIn.”</p></div></div>
+        <label for="followup-command">Your follow-up request</label>
         <textarea id="followup-command" rows="2" maxlength="800" placeholder="Remind me to follow up with a person via LinkedIn…"></textarea>
         <div class="followup-command-controls"><label for="followup-due">Remind me at (optional)<input id="followup-due" type="datetime-local"></label><button id="save-followup" type="button" class="followup-action">Save follow-up</button></div>
-        <p id="voice-assistant-reply" role="status" aria-live="polite">Your follow-ups stay in your private session graph. Recording starts only when you tap the microphone.</p>
-        <div id="voice-reply-playback"></div>
+        <p id="followup-status" role="status" aria-live="polite">Your follow-ups stay in your private session graph.</p>
         <h3>My follow-up actions</h3><div id="saved-followups"><p>No follow-ups saved in this session yet.</p></div>
         <p class="followup-note">Saved here in FalkorDB. Add a timed action to your calendar for an alert when this page is closed.</p>
       </section>

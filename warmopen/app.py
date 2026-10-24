@@ -7,8 +7,6 @@ import math
 import mimetypes
 import re
 import threading
-import time
-from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -426,7 +424,7 @@ class _Replay:
 
 def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None,
                 record_dir=None, recordings_dir=None, public_landing=False,
-                brightdata=None, profile_client=None, mentions=None, speech=None, transcribe=None) -> ThreadingHTTPServer:
+                brightdata=None, profile_client=None, mentions=None) -> ThreadingHTTPServer:
     """Build a server without starting its loop; replay never consults the store."""
     if mode not in ("live", "recorded"):
         raise ValueError("Unknown server mode")
@@ -442,9 +440,6 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
         counter = max((int(p.stem) for p in directory.glob("*.json") if p.stem.isdigit()), default=0)
     lock = threading.Lock()
     response_lock = threading.Lock()
-    speech_lock = threading.Lock()
-    speech_calls = deque()
-    speech_slots = threading.BoundedSemaphore(2)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -458,61 +453,6 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(data)
-
-        def _speech(self):
-            from .speech import validate_text
-
-            def error(status, message):
-                self._send(status, json.dumps({"error": message}).encode(), "application/json")
-            if self.command != "POST":
-                return error(405, "Use POST for voice playback.")
-            is_transcription = urlsplit(self.path).path == "/api/transcribe"
-            provider = transcribe if is_transcription else speech
-            if mode != "live" or provider is None:
-                return error(503, "Voice is not configured for this run.")
-            origin = self.headers.get("Origin")
-            if origin and urlsplit(origin).netloc != self.headers.get("Host"):
-                return error(403, "Open voice from this website.")
-            content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                if is_transcription:
-                    from .profile_sessions import read_profile_session
-                    read_profile_session(store, self.headers.get("X-Profile-Session"), self.headers.get("X-Owner-Token"))
-                    if content_type not in {"audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav"} or not 0 < length <= 5_000_000:
-                        raise ValueError("Invalid audio")
-                    audio_input = self.rfile.read(length)
-                else:
-                    if content_type != "application/json" or not 0 < length <= 12_000:
-                        raise ValueError("Invalid voice request")
-                    body = json.loads(self.rfile.read(length).decode("utf-8"))
-                    if not isinstance(body, dict) or set(body) != {"text"}:
-                        raise ValueError("Voice expects a text message only.")
-                    text = validate_text(body["text"])
-            except PermissionError:
-                return error(403, "Your private action session is required.")
-            except (ValueError, UnicodeError):
-                return error(400, "Use a short recording or a message of 1–800 characters.")
-            with speech_lock:
-                now = time.monotonic()
-                while speech_calls and now - speech_calls[0] >= 60:
-                    speech_calls.popleft()
-                if len(speech_calls) >= 12:
-                    return error(429, "Voice is busy. Try again in a minute.")
-                speech_calls.append(now)
-            if not speech_slots.acquire(blocking=False):
-                return error(429, "Voice is busy. Please try again shortly.")
-            try:
-                if is_transcription:
-                    transcript = provider(audio_input, content_type)
-                    self._send(200, json.dumps({"text": transcript}).encode(), "application/json")
-                else:
-                    audio = provider(text)
-                    self._send(200, audio, "audio/mpeg")
-            except Exception:
-                error(503, "Voice is unavailable right now. Please try again.")
-            finally:
-                speech_slots.release()
 
         def _api(self, path):
             nonlocal counter
@@ -576,8 +516,6 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
 
         def _handle(self):
             path = unquote(urlsplit(self.path).path)
-            if path in ("/api/speech", "/api/transcribe"):
-                return self._speech()
             if path.startswith("/api/"):
                 return self._api(path)
             name = {"/": "conferences.html" if public_landing else "index.html",

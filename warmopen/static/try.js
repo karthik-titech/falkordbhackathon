@@ -184,7 +184,6 @@ function edgeHasPublicCitation(edge) {
   return edge.evidence_ids.some(id => evidence[id] && safeHttpUrl(evidence[id].url));
 }
 function renderGraphDetail(personId) {
-  stopSpeech();
   const container = $("graph-person-detail");
   container.replaceChildren();
   const graphNode = conferenceGraph?.nodes.find(item => item.id === personId);
@@ -438,62 +437,6 @@ function renderConversationResult(container, data) {
     container.append(node("p", statuses[refresh.status] || "Public context refresh status is unknown.", "graph-refresh-status"));
   }
 }
-let currentSpeech = null;
-function stopSpeech() {
-  if (!currentSpeech) return;
-  const current = currentSpeech;
-  currentSpeech = null;
-  current.controller.abort();
-  if (current.audio) { current.audio.pause(); current.audio.src = ""; }
-  if (current.url) URL.revokeObjectURL(current.url);
-  current.button.textContent = "Listen";
-  current.status.textContent = "AI-generated voice";
-  current.button.setAttribute("aria-pressed", "false");
-}
-function listenButton(getText) {
-  const button = node("button", "Listen", "followup-action voice-listen");
-  button.type = "button";
-  button.setAttribute("aria-label", "Listen with AI-generated voice");
-  button.setAttribute("aria-pressed", "false");
-  const status = node("span", "AI-generated voice", "voice-note");
-  status.setAttribute("role", "status");
-  const wrap = node("div", undefined, "voice-control");
-  wrap.append(button, status);
-  button.addEventListener("click", async () => {
-    if (currentSpeech?.button === button) { stopSpeech(); return; }
-    stopSpeech();
-    const text = getText().trim();
-    if (!text || text.length > 800) { status.textContent = "Use 1–800 characters for playback."; return; }
-    const current = {button, status, controller: new AbortController(), audio: null, url: null};
-    currentSpeech = current;
-    button.textContent = "Cancel";
-    button.setAttribute("aria-pressed", "true");
-    status.textContent = "Preparing AI voice…";
-    try {
-      const response = await fetch("/api/speech", {method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({text}), signal: current.controller.signal});
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Voice unavailable. Try again.");
-      }
-      const blob = await response.blob();
-      if (currentSpeech !== current) return;
-      current.url = URL.createObjectURL(blob);
-      current.audio = new Audio(current.url);
-      current.audio.addEventListener("ended", () => { if (currentSpeech === current) { stopSpeech(); status.textContent = "AI-generated voice"; } });
-      current.audio.addEventListener("error", () => { if (currentSpeech === current) { stopSpeech(); status.textContent = "Playback unavailable. Try again."; } });
-      button.textContent = "Stop";
-      await current.audio.play();
-      status.textContent = "Playing AI-generated voice";
-    } catch (error) {
-      if (currentSpeech !== current) return;
-      stopSpeech();
-      status.textContent = error.name === "AbortError" ? "AI-generated voice" : error.message;
-    }
-  });
-  return wrap;
-}
-window.addEventListener("pagehide", stopSpeech);
 function renderNextActions(container, data) {
   const targetName = names[data.target] || conferenceGraph?.nodes?.find(person => person.id === data.target)?.name || "";
   const firstName = targetName.split(" ")[0] || "there";
@@ -504,7 +447,7 @@ function renderNextActions(container, data) {
   draft.setAttribute("aria-label", "Edit your follow-up message");
   draft.rows = 4;
   draft.value = `Hi ${firstName}! ${opener.replace(/^Hey(?: [^,]+)?,\s*/i, "")} Would you be open to connecting?`;
-  section.append(draft, listenButton(() => draft.value));
+  section.append(draft);
   const actions = node("div", undefined, "followup-actions");
   const linkedin = $("linkedin-followup-link").content.firstElementChild.cloneNode(true);
   const linkedinUrl = new URL(linkedin.href);
@@ -576,7 +519,7 @@ function renderOpeningLines(container, rankedOpeners) {
         copy.textContent = "Select the text to copy";
       }
     });
-    card.append(copy, listenButton(() => item.text.trim()));
+    card.append(copy);
     list.append(card);
   });
   container.append(list);
@@ -1483,5 +1426,4 @@ setupGraphRotation();
 init();
 loadConferenceContext();
 
-$("record-followup").onclick = recordFollowup;
-$("save-followup").onclick = () => saveSpokenFollowup();
+$("save-followup").onclick = () => saveFollowup();
