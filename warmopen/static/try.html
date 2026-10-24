@@ -48,15 +48,6 @@
           </div>
         </details>
       </div>
-      <section id="followup-planner" class="followup-planner" aria-labelledby="followup-planner-heading">
-        <div class="followup-planner-heading"><div><h2 id="followup-planner-heading">Save a follow-up</h2><p>“Remind me to follow up with Andrea Griffiths via LinkedIn—we connected on LinkedIn.”</p></div></div>
-        <label for="followup-command">Your follow-up request</label>
-        <textarea id="followup-command" rows="2" maxlength="800" placeholder="Remind me to follow up with a person via LinkedIn…"></textarea>
-        <div class="followup-command-controls"><label for="followup-due">Remind me at (optional)<input id="followup-due" type="datetime-local"></label><button id="save-followup" type="button" class="followup-action">Save follow-up</button></div>
-        <p id="followup-status" role="status" aria-live="polite">Your follow-ups stay in your private session graph.</p>
-        <h3>My follow-up actions</h3><div id="saved-followups"><p>No follow-ups saved in this session yet.</p></div>
-        <p class="followup-note">Saved here in FalkorDB. Add a timed action to your calendar for an alert when this page is closed.</p>
-      </section>
       <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
       <section id="graph-route-summary" class="graph-route-summary" aria-live="polite"><p>Choose your starting profile to find the shortest connection.</p></section>
       <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
@@ -129,6 +120,17 @@
       </div>
     </details>
   </main>
+  <div id="followup-parking" hidden>
+      <section id="followup-planner" class="followup-planner" aria-labelledby="followup-planner-heading">
+        <div class="followup-planner-heading"><div><h2 id="followup-planner-heading">Save a follow-up</h2><p>Save a reminder for this conversation.</p></div></div>
+        <label for="followup-command">Your follow-up request</label>
+        <textarea id="followup-command" rows="2" maxlength="800" placeholder="Remind me to follow up with a person via LinkedIn…"></textarea>
+        <div class="followup-command-controls"><label for="followup-due">Remind me at (optional)<input id="followup-due" type="datetime-local"></label><button id="save-followup" type="button" class="followup-action">Save follow-up</button></div>
+        <p id="followup-status" role="status" aria-live="polite">Your follow-ups stay in your private session graph.</p>
+        <h3>My follow-up actions</h3><div id="saved-followups"><p>No follow-ups saved in this session yet.</p></div>
+        <p class="followup-note">Saved here in FalkorDB. Add a timed action to your calendar for an alert when this page is closed.</p>
+      </section>
+  </div>
   <template id="linkedin-followup-link"><a href="https://www.linkedin.com/search/results/people/" target="_blank" rel="noopener noreferrer">Find on LinkedIn ↗</a></template>
 </body>
 </html>

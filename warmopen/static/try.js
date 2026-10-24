@@ -184,6 +184,7 @@ function edgeHasPublicCitation(edge) {
   return edge.evidence_ids.some(id => evidence[id] && safeHttpUrl(evidence[id].url));
 }
 function renderGraphDetail(personId) {
+  parkFollowupPlanner();
   const container = $("graph-person-detail");
   container.replaceChildren();
   const graphNode = conferenceGraph?.nodes.find(item => item.id === personId);
@@ -359,6 +360,7 @@ function renderConversationResult(container, data) {
   container.append(warmStatus);
   renderOpeningLines(container, data.ranked_openers);
   renderNextActions(container, data);
+  mountFollowupPlanner(container, data.target);
   const match = node("section", undefined, "graph-match-summary");
   match.append(node("h3", "Why this person"));
   const matchLabels = {mirror: "Mirror", missing_piece: "Missing piece",
@@ -1399,6 +1401,7 @@ window.addEventListener("graph-context-node", event => {
   const data = event.detail;
   if (!data || !conferenceGraph) return;
   const area = $("graph-person-detail");
+  parkFollowupPlanner();
   area.replaceChildren();
   area.append(node("p", data.kind === "self" ? "YOUR PRIVATE SESSION PROFILE" : "PROFESSIONAL TOPIC", "graph-detail-kicker"),
     node("h2", data.kind === "self" ? "You" : data.name));

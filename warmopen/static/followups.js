@@ -1,5 +1,15 @@
 "use strict";
 // Private action sessions are kept separate from public profile exploration.
+const followupPlanner = document.getElementById("followup-planner");
+function parkFollowupPlanner() {
+  const parking = document.getElementById("followup-parking");
+  if (followupPlanner.parentElement !== parking) parking.append(followupPlanner);
+}
+function mountFollowupPlanner(container, target) {
+  container.append(followupPlanner);
+  const name = names[target] || conferenceRoster[target]?.name || "this person";
+  followupPlanner.querySelector("#followup-command").placeholder = `Remind me to follow up with ${name} via LinkedIn…`;
+}
 let privateActionSession = null, followupItems = [], actionBusy = false;
 const ACTION_SESSION_KEY = "warmopen_action_session_v1";
 async function actionSession(create = true) {
