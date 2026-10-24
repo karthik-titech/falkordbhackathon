@@ -474,7 +474,8 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
                 return self._api(path)
             name = {"/": "conferences.html" if public_landing else "index.html",
                     "/workspace": "index.html", "/owner": "owner.html", "/try": "conferences.html",
-                    "/explore": "try.html", "/start": "start.html"}.get(path)
+                    "/explore": "try.html", "/start": "start.html",
+                    "/how-it-works": "how-it-works.html"}.get(path)
             if path.startswith("/static/"):
                 name = path[len("/static/"):]
             if self.command == "GET" and name and ".." not in Path(name).parts:

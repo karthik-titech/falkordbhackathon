@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Public graph exploration</title>
+  <title>Find your next conversation</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/welcome.css">
   <script src="/static/brand.js"></script>
@@ -11,20 +11,22 @@
 </head>
 <body class="public-try explore-page">
   <header>
-    <p id="try-kicker">PUBLIC GRAPH EXPLORATION</p>
-    <div class="header-meta"><p><span id="try-product-name"></span></p><a href="/try">Conference directory</a></div>
+    <p id="try-kicker">PEOPLE, NOT JUST PROFILES</p>
+    <div class="header-meta"><a href="/how-it-works">How it works</a><p><span id="try-product-name"></span></p><a href="/try">Conference directory</a></div>
   </header>
   <main>
     <section id="conference-context" class="conference-context" hidden>
       <a href="/try" class="quiet-link">← Conference directory</a>
       <h1 id="explore-conference-title"></h1>
       <p id="explore-conference-dates" class="quiet-copy"></p>
+      <p class="graph-hero-copy">A room full of people. A better way to break the ice.</p>
+      <ol class="explore-steps" aria-label="How it works"><li><span>1</span> Find someone</li><li><span>2</span> Explore the connection</li><li><span>3</span> Start a conversation</li></ol>
       <p class="graph-context-copy">Connections show sourced public work; graph distance is not physical location.</p>
       <div class="graph-tools" role="group" aria-label="Graph filters and controls">
         <div class="graph-search-control">
           <label for="graph-search">Find a person</label>
-          <input id="graph-search" type="search" placeholder="Name" autocomplete="off">
-          <button id="graph-search-button" type="button">Find</button>
+          <input id="graph-search" type="search" placeholder="Search speakers by name…" autocomplete="off">
+          <button id="graph-search-button" type="button">Find person ↗</button>
         </div>
         <details class="graph-map-options">
           <summary>Map options</summary>
@@ -41,7 +43,7 @@
         </details>
       </div>
       <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
-      <details class="graph-topic-picker" aria-labelledby="graph-topics-heading">
+      <details id="graph-topic-picker" class="graph-topic-picker" aria-labelledby="graph-topics-heading">
         <summary>Your interests · adjust</summary>
         <div>
           <h2 id="graph-topics-heading">Personalize with public topics</h2>
@@ -54,9 +56,10 @@
       </details>
       <p id="graph-status" class="quiet-copy" role="status" aria-live="polite">Loading the conference people graph…</p>
       <div class="graph-layout">
-        <div class="graph-frame">
+        <div class="graph-map-column"><div class="graph-map-heading"><strong>Your people map</strong><span>Click a person to explore</span></div><div class="graph-frame">
           <svg id="conference-graph" viewBox="0 0 520 520" role="group" aria-label="Interactive public people graph"></svg>
-        </div>
+          <p class="graph-map-caption">Drag to rotate · Click a circle to meet someone</p>
+        </div><div class="connection-guide" aria-label="Connection categories"><a class="guide-mirror" href="/how-it-works#mirror" title="Their cited work overlaps with your interests."><strong>Mirror ⓘ</strong> Similar interests</a><a class="guide-missing" href="/how-it-works#missing-piece" title="Their cited work covers a capability you are looking for."><strong>Missing piece ⓘ</strong> Skills you need</a><a class="guide-unexpected" href="/how-it-works#unexpected-connection" title="A cited public path connects the compared profiles when no topic overlap applies."><strong>Unexpected connection ⓘ</strong> A public connection</a></div></div>
         <aside id="graph-person-detail" class="graph-person-detail" aria-live="polite">
           <h2>Select a profile</h2>
           <p class="quiet-copy">Focus a public profile to inspect its conference role and sources.</p>

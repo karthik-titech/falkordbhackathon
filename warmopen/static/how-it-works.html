@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How it works · Conference connections</title>
+  <link rel="stylesheet" href="/static/welcome.css">
+</head>
+<body class="welcome-page how-page">
+  <header class="welcome-header"><a class="wordmark" href="/try"><span class="wordmark-mark" aria-hidden="true">↗</span>Back to conferences</a><a class="quiet-link" href="#definitions">Connection types explained</a></header>
+  <main class="welcome-main how-main">
+    <section class="welcome-hero"><p class="eyebrow">A LITTLE CONTEXT GOES A LONG WAY</p><h1>From a room of strangers<br>to a reason to say hello.</h1><p class="hero-copy">Here is what we look at, how we connect the dots, and where the suggestions come from.</p></section>
+    <nav class="how-nav" aria-label="On this page"><a href="#process">The process ↓</a><a href="#definitions">The three connection types ↓</a><a href="#evaluation">What the numbers mean ↓</a></nav>
+    <section id="process" class="how-section">
+      <p class="eyebrow">THE PROCESS</p><h2>How your next conversation takes shape</h2>
+      <div class="process-chart" role="group" aria-label="Process flowchart, with optional profile research and model or estimate branches">
+        <div class="flow-box"><span class="flow-step">01 · YOU CHOOSE</span><h3>Pick a conference</h3><p>We start with the imported, publicly sourced speaker list. Confirmed attendees are listed separately when attendance evidence is available.</p></div>
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+        <div class="flow-decision">Want to personalize the suggestions?</div>
+        <div class="flow-branches">
+          <div class="flow-box flow-bright"><span class="flow-step">YES · BRIGHT DATA</span><h3>Look up your own public profile</h3><p>With your permission, Bright Data retrieves professional information from your LinkedIn or X link. We match it to conference topics. You review the interests and choose the skills you are looking for.</p></div>
+          <div class="flow-box"><span class="flow-step">SKIP · EXPLORE RIGHT AWAY</span><h3>Choose interests yourself, or just browse</h3><p>No signup or profile link required. With fewer details about you, the suggestions use the speaker’s public context and general conference questions.</p></div>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+        <div class="flow-box flow-database"><span class="flow-step">02 · FALKORDB</span><h3>Explore the people map</h3><p>FalkorDB stores people, talks, topics, companies, and the sources behind their connections. Cypher queries follow cited shared work, co-presentations, and coauthorship to find paths up to six hops.</p><p class="flow-small">The map shows public connections, not physical proximity or confirmed friendships. Choosing a person in the map does not identify you as that person.</p></div>
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+        <div class="flow-box"><span class="flow-step">03 · YOU CLICK</span><h3>“Help me start a conversation”</h3><p>We compare your selected topics with the target’s cited work, look for a supported connection type, and prepare three possible opening lines. If configured, Bright Data refreshes public professional sources and searches public mentions.</p><p class="flow-small">Profile research works independently of website and mention search. Those extra searches need their own Bright Data access; when unavailable, we use the existing cited information.</p></div>
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+        <div class="flow-decision">Enough supporting evidence for an assessment?</div>
+        <div class="flow-branches">
+          <div class="flow-box flow-model"><span class="flow-step">YES · DECISIONS API</span><h3>Assess fit and rank the options</h3><p>The model receives abstract counts, booleans, and fixed labels: topic overlap, desired-skill overlap, cited routes, evidence counts, and anonymous opening-line candidates. Available mention context contributes aggregate tone counts.</p><p class="flow-small">Names, profile links, raw posts, and opening-line text are not sent to the decision model. We only show a model assessment when the response passes confidence and consistency checks.</p></div>
+          <div class="flow-box"><span class="flow-step">LIMITED EVIDENCE OR UNAVAILABLE MODEL</span><h3>Use a clearly marked starting estimate</h3><p>A fixed rule uses the available evidence counts. We keep the model assessment empty and label the displayed number as a rough, uncalibrated starting estimate.</p><p class="flow-small">No supported category? We say so. You still get opening lines.</p></div>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+        <div class="flow-box flow-finish"><span class="flow-step">04 · YOUR NEXT MOVE</span><h3>Three ways to say hello</h3><p>Pick an opening line, check its source, and make it your own. The first suggestion is the best-ranked starting point, not a script you have to follow.</p></div>
+      </div>
+    </section>
+    <section id="definitions" class="how-section"><p class="eyebrow">OUR DEFINITIONS</p><h2>Three different reasons to connect</h2><p class="how-intro">These describe the evidence for a conversation. They are not personality types.</p>
+      <div class="definition-grid">
+        <article id="mirror" class="definition-card definition-mirror"><span class="definition-symbol" aria-hidden="true">↔</span><h3>Mirror</h3><p class="definition-lead">“We care about similar things.”</p><p>Their cited work overlaps with your selected interests, or with the cited topics of the public profile you explicitly chose to compare.</p><p><strong>Example:</strong> You select AI agents; they gave a talk about agents.</p><p class="definition-rule"><strong>We check:</strong> at least one supported shared topic.</p></article>
+        <article id="missing-piece" class="definition-card definition-missing"><span class="definition-symbol" aria-hidden="true">＋</span><h3>Missing piece</h3><p class="definition-lead">“They know something I want to learn.”</p><p>Their cited work covers a topic or capability you selected under “Looking for.” It is about a complementary need, rather than simply having the same interests.</p><p><strong>Example:</strong> You need graph-database expertise; their talk covers graph databases.</p><p class="definition-rule"><strong>We check:</strong> at least one supported desired-capability match.</p></article>
+        <article id="unexpected-connection" class="definition-card definition-unexpected"><span class="definition-symbol" aria-hidden="true">↗</span><h3>Unexpected connection</h3><p class="definition-lead">“There is a connection I hadn’t noticed.”</p><p>A cited public relationship path connects the compared profiles, even when there is no supported shared-interest or desired-capability match.</p><p><strong>Example:</strong> You and the target have each co-presented with the same person.</p><p class="definition-rule"><strong>We check:</strong> a supported path, not a guess based on personality or attendance.</p></article>
+      </div>
+      <aside class="how-note"><strong>Which label wins?</strong> The current rule checks missing piece first, then mirror, then unexpected connection. With no supported match, the category stays unknown. The detailed category rankings can still show the strength of each supported basis. A profile URL alone does not establish a path from you; route comparisons require an explicitly selected public comparison profile.</aside>
+    </section>
+    <section id="evaluation" class="how-section"><p class="eyebrow">WHAT WE EVALUATE</p><h2>A useful starting point. Not a friendship forecast.</h2><div class="evaluation-grid"><article class="flow-box"><h3>What the decision model chooses</h3><ul><li>Overall conversation fit.</li><li>Whether the supported connection type is consistent.</li><li>A fit assessment for each of the three categories.</li><li>Which anonymous opening-line candidate to put first.</li></ul><p>Unsupported categories do not become matches just because the model chooses them. Low-confidence or inconsistent answers are withheld.</p></article><article class="flow-box"><h3>What “uncalibrated fit” means</h3><p>A relative guide from the available evidence. A score of 70/100 does not mean a 70% likelihood of becoming friends or having a good conversation.</p><p>The rough starting estimate is a separate rule-based fallback. It can be nonzero even without personal overlap, because public context is still available.</p></article></div>
+      <details class="formula-details"><summary>See the rough-estimate calculation</summary><p>The overall starting estimate begins at 20. Add 15 for each shared topic (up to 30), 15 for each sought-capability match (up to 25), up to 15 for a cited route (15 divided by the shortest route’s hop count, rounded), and 2 for each professional evidence item (up to 10). The result is capped at 90.</p><p>Category starting estimates use separate rules and stay zero without their required support. Mirror: 20 + 15 per shared topic (up to 60) + evidence points. Missing piece: 25 + 15 per sought match (up to 55) + evidence points. Unexpected connection: 20 + route points + evidence points. Each is capped at 90. These are design heuristics, not measured success rates.</p></details>
+      <aside class="how-note"><strong>About public mentions:</strong> positive, neutral, critical, or unclear describes a post’s wording. It is not a reputation score or proof of what someone is like.</aside>
+    </section>
+    <div class="how-cta"><h2>Ready to find your next conversation?</h2><a class="primary-link" href="/try">Choose a conference ↗</a></div>
+    <footer class="welcome-footer"><span>Check the sources. Bring your own curiosity.</span><a href="/try">Back to conferences</a></footer>
+  </main>
+</body>
+</html>

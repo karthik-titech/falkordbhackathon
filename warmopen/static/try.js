@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-document.title = `${PRODUCT_NAME} · Public graph exploration`;
+document.title = `${PRODUCT_NAME} · Find your next conversation`;
 $("try-product-name").textContent = PRODUCT_NAME;
 let people = [], names = {}, evidence = {}, example = null, busy = false;
 let conferenceRoster = {}, conferenceGraph = null, defaultGraphFocus = "", graphZoom = 1, graphRequestToken = 0;
@@ -189,17 +189,17 @@ function renderGraphDetail(personId) {
       node("p", "Focus a public profile to inspect its conference role and sources.", "quiet-copy"));
     return;
   }
-  const isCenter = personId === conferenceGraph.center_id;
   const roles = graphRoles(graphNode.roles);
   const rosterPerson = conferenceRoster[personId] || {};
-  container.append(node("p", "PUBLIC PROFILE", "graph-detail-kicker"));
+  const initials = graphNode.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("");
+  container.append(node("div", initials, "person-avatar"));
+  container.append(node("p", "YOUR NEXT CONVERSATION", "graph-detail-kicker"));
   container.append(node("h2", graphNode.name));
   const roleLabels = [];
   if (roles.attendee) roleLabels.push("Confirmed attendee");
   if (roles.speaker) roleLabels.push("Scheduled speaker");
   container.append(node("p", roleLabels.join(" · ") || "Public conference profile", "graph-detail-role"));
-  const distance = graphDistanceLabel(graphNode.distance, isCenter);
-  container.append(node("p", `${distance}. Graph distance does not indicate physical location.`, "graph-detail-distance"));
+
   const categories = {
     mirror: {label: "Mirror", className: "graph-category-mirror"},
     missing_piece: {label: "Missing piece", className: "graph-category-missing"},
@@ -207,7 +207,7 @@ function renderGraphDetail(personId) {
   };
   const comparison = Object.prototype.hasOwnProperty.call(categories, graphNode.connection_type)
     ? categories[graphNode.connection_type] : {label: "Add interests to personalize", className: "graph-category-unknown"};
-  container.append(node("p", comparison.label, `graph-category-badge ${comparison.className}`));
+  if (graphNode.connection_type !== "unknown") container.append(node("p", comparison.label, `graph-category-badge ${comparison.className}`));
   const categoryReasons = {
     mirror: "Shares a cited public topic or work signal with the selected profile.",
     missing_piece: "Has cited evidence about a topic the selected profile is looking for.",
@@ -216,27 +216,30 @@ function renderGraphDetail(personId) {
   const reason = typeof graphNode.reason === "string" && graphNode.reason.length <= 240
     ? graphNode.reason : (categoryReasons[graphNode.connection_type]
       || "Not enough supported public context to compare this profile yet.");
-  container.append(node("p", reason, "graph-detail-reason"));
+  if (graphNode.connection_type !== "unknown") container.append(node("p", reason, "graph-detail-reason"));
   const sourceId = graphSourceId();
   const sourceName = names[sourceId] || $("try-source").selectedOptions[0]?.textContent;
-  container.append(node("p", sourceId && sourceName
-    ? `Public profile comparison: ${sourceName}. Your submitted profile links are not matched to this graph profile.`
-    : (interestTopicIds.size || seekingTopicIds.size
-      ? "Using only the topic choices in this browser session. No conference profile is treated as you."
-      : "Select topics or enable an explicit public profile comparison to personalize this view."), "graph-comparison-note"));
+  const background = node("details", undefined, "person-background");
+  background.append(node("summary", "Talks & public sources"));
+  const backgroundContent = node("div");
+  backgroundContent.append(node("p", sourceId && sourceName
+    ? `Comparing with ${sourceName}. This does not identify you.`
+    : "No conference profile is treated as you.", "graph-comparison-note"));
+  renderConversationPanel(container, personId);
+
 
   const talks = Array.isArray(rosterPerson.talks) ? rosterPerson.talks : [];
   if (talks.length) {
-    container.append(node("h3", "Scheduled talks"));
+    backgroundContent.append(node("h3", "Scheduled talks"));
     const list = node("ul", undefined, "graph-talk-list");
-    for (const talk of talks.slice(0, 4)) {
+    for (const talk of talks.filter((talk, index, all) => all.findIndex(other => other.title === talk.title) === index).slice(0, 4)) {
       const item = node("li");
       item.append(document.createTextNode(talk.title || "Scheduled talk"));
       const sourceId = (rosterPerson.evidence_ids || []).find(id => evidence[id] && safeHttpUrl(evidence[id].url));
       if (sourceId) item.append(document.createTextNode(" · "), sourceLink(evidence[sourceId].url, "Source"));
       list.append(item);
     }
-    container.append(list);
+    backgroundContent.append(list);
   }
 
   const sourceIds = new Set(rosterPerson.evidence_ids || []);
@@ -247,7 +250,7 @@ function renderGraphDetail(personId) {
     }
   }
   const sources = Array.from(sourceIds).filter(id => evidence[id] && safeHttpUrl(evidence[id].url)).slice(0, 8);
-  container.append(node("h3", "Public sources"));
+  backgroundContent.append(node("h3", "Public sources"));
   if (sources.length) {
     const list = node("ul", undefined, "graph-source-list");
     for (const [index, evidenceId] of sources.entries()) {
@@ -255,11 +258,12 @@ function renderGraphDetail(personId) {
       item.append(sourceLink(evidence[evidenceId].url, `Source ${index + 1}`));
       list.append(item);
     }
-    container.append(list);
+    backgroundContent.append(list);
   } else {
-    container.append(node("p", "No public source links are available in this view.", "quiet-copy"));
+    backgroundContent.append(node("p", "No public source links are available in this view.", "quiet-copy"));
   }
-  renderConversationPanel(container, personId);
+  background.append(backgroundContent);
+  container.append(background);
 }
 
 function conversationKey(targetId) {
@@ -279,7 +283,8 @@ function typeNumber(value) {
 }
 function renderConversationPanel(container, targetId) {
   const panel = node("section", undefined, "graph-conversation-panel");
-  panel.append(node("h3", "Start a conversation"));
+  panel.append(node("h3", "Make the first move"));
+  panel.append(node("p", "A little context. A more natural hello.", "conversation-hint"));
   const key = conversationKey(targetId), result = conversationResults.get(key);
   const actions = node("div", undefined, "graph-conversation-actions");
   const research = node("button", "Help me start a conversation", "graph-action-button graph-action-primary");
@@ -287,6 +292,7 @@ function renderConversationPanel(container, targetId) {
   const sameSourceTarget = Boolean(sourceId && sourceId === targetId);
   research.disabled = sameSourceTarget || conversationBusy;
   research.setAttribute("type", "button");
+  if (result) research.textContent = "Refresh conversation ideas ↻";
   research.addEventListener("click", () => assessConversation(targetId, true));
   actions.append(research);
   panel.append(actions);
@@ -296,6 +302,7 @@ function renderConversationPanel(container, targetId) {
   interestsLink.addEventListener("click", () => {
     const details = $("graph-topic-picker");
     details.open = true;
+    details.scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center"});
     details.querySelector("summary")?.focus();
   });
   panel.append(interestsLink);
@@ -416,6 +423,17 @@ function renderOpeningLines(container, rankedOpeners) {
         node("p", cited.claim || "Public source fact", "graph-opener-fact"));
       card.append(fact);
     }
+    const copy = node("button", "Copy opening line", "opener-copy");
+    copy.type = "button";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(item.text.trim());
+        copy.textContent = "Copied ✓";
+      } catch (_) {
+        copy.textContent = "Select the text to copy";
+      }
+    });
+    card.append(copy);
     list.append(card);
   });
   container.append(list);
@@ -473,7 +491,9 @@ async function assessConversation(targetId, refresh) {
   const requestIsCurrent = () => requestKey === conversationKey(targetId)
     && conferenceGraph?.center_id === targetId && $("graph-focus").value === targetId;
   const status = $("graph-person-detail").querySelector(".graph-action-status");
-  if (status) status.textContent = refresh ? "Researching cited public context and preparing suggestions…" : "Assessing graph-supported context…";
+  if (status) status.textContent = "Finding a good way to say hello…";
+  const busyButton = $("graph-person-detail").querySelector(".graph-action-primary");
+  if (busyButton) busyButton.textContent = "Preparing your opening lines…";
   $("graph-person-detail").querySelectorAll(".graph-action-button").forEach(button => { button.disabled = true; });
   const body = {
     target: targetId,
@@ -564,10 +584,13 @@ function graphNodeClass(item, isCenter) {
   if (roles.speaker) return "graph-node graph-node-speaker";
   return "graph-node graph-node-other";
 }
-function activateGraphNode(personId) {
+async function activateGraphNode(personId) {
   const select = $("graph-focus");
   if (Array.from(select.options).some(option => option.value === personId)) select.value = personId;
-  loadConferenceGraph({focus: personId, query: $("graph-search").value.trim(), returnFocus: true});
+  await loadConferenceGraph({focus: personId, query: $("graph-search").value.trim(), returnFocus: true});
+  if (window.innerWidth <= 800 && conferenceGraph?.center_id === personId) {
+    $("graph-person-detail").scrollIntoView({behavior: "instant", block: "start"});
+  }
 }
 function graphSourceId() {
   return $("graph-public-comparison").checked ? $("try-source").value : "";
@@ -657,6 +680,10 @@ function renderConferenceGraph(returnFocus = false, preserveDetail = false) {
     const nodeScale = use3D ? point.scale : 1;
     group.append(svgElement("circle", {cx: point.x, cy: point.y,
       r: Math.max(6, (isCenter ? 15 : 10) * nodeScale), opacity: use3D ? 0.66 + nodeScale * 0.27 : 1}));
+    if (isCenter || nodeScale > 0.85) group.append(svgElement("text", {
+      x: point.x, y: point.y + 3, "text-anchor": "middle", class: "graph-node-initials",
+      "aria-hidden": "true",
+    }, item.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("")));
     let anchor = "middle", labelX = point.x, labelY = point.y + (isCenter ? 33 : 25);
     if (!isCenter) {
       const dx = point.x - centerX;
@@ -783,8 +810,8 @@ async function loadConferenceGraph({focus, query = "", returnFocus = false} = {}
     const shown = data.nodes.length;
     const total = Number.isInteger(data.total_count) ? data.total_count : shown;
     const rosterCount = Number.isInteger(data.roster_count) ? data.roster_count : conferenceRosterCount();
-    let message = `Showing ${shown} of ${total} matching profiles; ${rosterCount} people in this conference roster.`;
-    if (data.truncated) message += " The graph is limited to a bounded view.";
+    let message = `${shown} people on the map · ${rosterCount} in this conference`;
+    if (data.truncated) message += " · Search to find someone else";
     $("graph-status").textContent = message;
   } catch (_) {
     if (token === graphRequestToken) {
