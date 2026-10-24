@@ -66,6 +66,9 @@ def main(argv=None):
         brightdata_zone = os.environ.get("BRIGHTDATA_ZONE")
         brightdata_serp_zone = os.environ.get("BRIGHTDATA_SERP_ZONE")
         jev = decisions_client(decision_key) if decision_key else None
+        from .speech import speech_client, transcription_client
+        speech = speech_client(decision_key) if decision_key else None
+        transcribe = transcription_client(decision_key) if decision_key else None
         llm = anthropic_llm(llm_key) if llm_key else None
         brightdata = (brightdata_client(brightdata_key, brightdata_zone)
                       if brightdata_key and brightdata_zone else None)
@@ -81,7 +84,7 @@ def main(argv=None):
         server = make_server(store, args.host, args.port, jev=jev, llm=llm,
                              record_dir=args.record, public_landing=args.public_trial,
                              brightdata=brightdata, profile_client=profile_client,
-                             mentions=mentions)
+                             mentions=mentions, speech=speech, transcribe=transcribe)
     mode = "Recorded run" if args.replay else "Live run"
     print(f"{mode}: http://{args.host}:{server.server_address[1]}", flush=True)
     try:

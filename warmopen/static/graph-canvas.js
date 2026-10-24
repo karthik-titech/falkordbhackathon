@@ -5,7 +5,7 @@ const canvas = document.getElementById("falkordb-people-canvas");
 const basic = document.getElementById("conference-graph");
 const label = document.getElementById("graph-renderer-label");
 const palette = {mirror: "#3eae91", missing_piece: "#e4a23d", unexpected_connection: "#9f7add"};
-const edgePalette = {interest: "#ad94ce", co_speaker: "#4f92cd", shared_work: "#e2a24a", coauthor: "#ac7bca"};
+const edgePalette = {followup: "#d78b35", action_for: "#d78b35", interest: "#ad94ce", co_speaker: "#4f92cd", shared_work: "#e2a24a", coauthor: "#ac7bca"};
 let signature = "", queued = null, running = false, initialized = false;
 let lastDimension = "", lastLayout = "", lastWidth = 0, lastHeight = 0;
 
@@ -78,16 +78,16 @@ async function apply(options) {
       isLinkDimmed: link => link.data?.onPath !== true,
     });
     canvas.setData({
-      nodes: graph.nodes.map((n, i) => ({id: i + 1, labels: [n.kind === "topic" ? "Topic" : "Person"], visible: true,
-        shape: n.kind === "topic" ? "square" : "circle",
+      nodes: graph.nodes.map((n, i) => ({id: i + 1, labels: [n.kind === "action" ? "FollowUp" : n.kind === "topic" ? "Topic" : "Person"], visible: true,
+        shape: n.kind === "topic" || n.kind === "action" ? "square" : "circle",
         ...(n.kind === "self" ? {x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 0} : {}),
         size: n.kind === "topic" ? 12 : n.kind === "self" || n.id === targetId ? 28 : 20,
-        color: n.kind === "topic" ? "#af95d0" : n.id === graph.comparison_source ? "#3c83c4" : n.id === targetId ? "#254e3b" : routeIds.has(n.id) ? "#e3a23f" : palette[n.connection_type]
+        color: n.kind === "action" ? "#e7a64e" : n.kind === "topic" ? "#af95d0" : n.id === graph.comparison_source ? "#3c83c4" : n.id === targetId ? "#254e3b" : routeIds.has(n.id) ? "#e3a23f" : palette[n.connection_type]
           || (n.roles.includes("confirmed_attendee") ? "#61afc3" : "#e8c174"),
         caption: "name", data: {name: (userSource && n.id === graph.comparison_source ? `You · ${n.name}` : n.name).replace(/[<>&]/g, char => ({"<": "‹", ">": "›", "&": "＆"}[char])), personId: n.id, kind: n.kind || "person", topics: n.topics || []}})),
       links: edges.filter(e => lookup.has(e.source) && lookup.has(e.target)).map((e, i) => ({
         id: i + 1, source: lookup.get(e.source), target: lookup.get(e.target),
-        relationship: {interest: "Topic link", co_speaker: "Co-presented", shared_work: "Shared work", coauthor: "Coauthored"}[e.category],
+        relationship: {followup: "Has action", action_for: "Follow up with", interest: "Topic link", co_speaker: "Co-presented", shared_work: "Shared work", coauthor: "Coauthored"}[e.category],
         color: isPathEdge(e) ? "#ed9a27" : edgePalette[e.category] || "#8caa95", visible: true, width: isPathEdge(e) ? 4 : 1.5, arrowSize: 0,
         data: {onPath: isPathEdge(e)},
       })),

@@ -184,6 +184,7 @@ function edgeHasPublicCitation(edge) {
   return edge.evidence_ids.some(id => evidence[id] && safeHttpUrl(evidence[id].url));
 }
 function renderGraphDetail(personId) {
+  stopSpeech();
   const container = $("graph-person-detail");
   container.replaceChildren();
   const graphNode = conferenceGraph?.nodes.find(item => item.id === personId);
@@ -437,6 +438,62 @@ function renderConversationResult(container, data) {
     container.append(node("p", statuses[refresh.status] || "Public context refresh status is unknown.", "graph-refresh-status"));
   }
 }
+let currentSpeech = null;
+function stopSpeech() {
+  if (!currentSpeech) return;
+  const current = currentSpeech;
+  currentSpeech = null;
+  current.controller.abort();
+  if (current.audio) { current.audio.pause(); current.audio.src = ""; }
+  if (current.url) URL.revokeObjectURL(current.url);
+  current.button.textContent = "Listen";
+  current.status.textContent = "AI-generated voice";
+  current.button.setAttribute("aria-pressed", "false");
+}
+function listenButton(getText) {
+  const button = node("button", "Listen", "followup-action voice-listen");
+  button.type = "button";
+  button.setAttribute("aria-label", "Listen with AI-generated voice");
+  button.setAttribute("aria-pressed", "false");
+  const status = node("span", "AI-generated voice", "voice-note");
+  status.setAttribute("role", "status");
+  const wrap = node("div", undefined, "voice-control");
+  wrap.append(button, status);
+  button.addEventListener("click", async () => {
+    if (currentSpeech?.button === button) { stopSpeech(); return; }
+    stopSpeech();
+    const text = getText().trim();
+    if (!text || text.length > 800) { status.textContent = "Use 1–800 characters for playback."; return; }
+    const current = {button, status, controller: new AbortController(), audio: null, url: null};
+    currentSpeech = current;
+    button.textContent = "Cancel";
+    button.setAttribute("aria-pressed", "true");
+    status.textContent = "Preparing AI voice…";
+    try {
+      const response = await fetch("/api/speech", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text}), signal: current.controller.signal});
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Voice unavailable. Try again.");
+      }
+      const blob = await response.blob();
+      if (currentSpeech !== current) return;
+      current.url = URL.createObjectURL(blob);
+      current.audio = new Audio(current.url);
+      current.audio.addEventListener("ended", () => { if (currentSpeech === current) { stopSpeech(); status.textContent = "AI-generated voice"; } });
+      current.audio.addEventListener("error", () => { if (currentSpeech === current) { stopSpeech(); status.textContent = "Playback unavailable. Try again."; } });
+      button.textContent = "Stop";
+      await current.audio.play();
+      status.textContent = "Playing AI-generated voice";
+    } catch (error) {
+      if (currentSpeech !== current) return;
+      stopSpeech();
+      status.textContent = error.name === "AbortError" ? "AI-generated voice" : error.message;
+    }
+  });
+  return wrap;
+}
+window.addEventListener("pagehide", stopSpeech);
 function renderNextActions(container, data) {
   const targetName = names[data.target] || conferenceGraph?.nodes?.find(person => person.id === data.target)?.name || "";
   const firstName = targetName.split(" ")[0] || "there";
@@ -447,7 +504,7 @@ function renderNextActions(container, data) {
   draft.setAttribute("aria-label", "Edit your follow-up message");
   draft.rows = 4;
   draft.value = `Hi ${firstName}! ${opener.replace(/^Hey(?: [^,]+)?,\s*/i, "")} Would you be open to connecting?`;
-  section.append(draft);
+  section.append(draft, listenButton(() => draft.value));
   const actions = node("div", undefined, "followup-actions");
   const linkedin = $("linkedin-followup-link").content.firstElementChild.cloneNode(true);
   const linkedinUrl = new URL(linkedin.href);
@@ -519,7 +576,7 @@ function renderOpeningLines(container, rankedOpeners) {
         copy.textContent = "Select the text to copy";
       }
     });
-    card.append(copy);
+    card.append(copy, listenButton(() => item.text.trim()));
     list.append(card);
   });
   container.append(list);
@@ -731,6 +788,17 @@ function graphWithTopics(base) {
       : {status: "no_supported_path", persons: [], hops: null, edges: [], basis: "shared_interest"};
     source = ownId;
   }
+  const pendingActions = followupItems.filter(item => item.status !== "done").slice(0, 20);
+  if (pendingActions.length && privateActionSession) {
+    const ownerId = ownSelected ? source : `self:${privateActionSession.id}`;
+    if (!nodes.some(item => item.id === ownerId)) nodes.push({id: ownerId, name: "You", roles: ["self"], kind: "self", topics: []});
+    for (const action of pendingActions) {
+      if (!nodes.some(item => item.id === action.target)) nodes.push({id: action.target, name: action.target_name, roles: ["scheduled_speaker"], topics: []});
+      const id = `action:${action.id}`;
+      nodes.push({id, name: `Follow up · ${action.target_name} · ${action.channel}`, kind: "action", roles: ["action"], topics: []});
+      edges.push({source: ownerId, target: id, category: "followup", evidence_ids: []}, {source: id, target: action.target, category: "action_for", evidence_ids: []});
+    }
+  }
   return {...base, nodes, edges, center_id: ownSelected ? source : base.center_id, target_id: base.center_id, shortest_path: route, comparison_source: source};
 }
 function routeEdgeKey(edge) {
@@ -789,6 +857,7 @@ function graphNodeClass(item, isCenter) {
   return "graph-node graph-node-other";
 }
 async function activateGraphNode(personId) {
+  if (personId.startsWith("action:")) { $("saved-followups").scrollIntoView({block: "center"}); return; }
   targetChosenByUser = true;
   initialRecommendationChosen = true;
   const select = $("graph-focus");
@@ -926,7 +995,7 @@ function renderConferenceGraph(returnFocus = false, preserveDetail = false) {
   renderShortestPath();
   if (window.WarmOpenGraphKit) window.WarmOpenGraphKit.update({
     graph: graphWithTopics(conferenceGraph),
-    edges: graphWithTopics(conferenceGraph).edges.filter(edge => edge.category === "interest" || edgeHasPublicCitation(edge)),
+    edges: graphWithTopics(conferenceGraph).edges.filter(edge => ["interest", "followup", "action_for"].includes(edge.category) || edgeHasPublicCitation(edge)),
     dimension: use3D ? "3d" : "2d",
     layout: $("graph-layout-mode").value,
     onSelect: activateGraphNode,
@@ -1273,6 +1342,7 @@ async function loadConferenceContext() {
     profileTopicContext = readProfileTopicContext(conferenceId);
     renderTopicPickers(topicItems, conferenceId);
     await loadConferenceGraph();
+    await loadFollowups();
   } catch (_) {
     $("explore-conference-title").textContent = "Conference directory unavailable";
     $("explore-conference-dates").textContent = "Public profile exploration is still available below.";
@@ -1412,3 +1482,6 @@ window.addEventListener("falkordb-canvas-ready", () => { if (conferenceGraph) re
 setupGraphRotation();
 init();
 loadConferenceContext();
+
+$("record-followup").onclick = recordFollowup;
+$("save-followup").onclick = () => saveSpokenFollowup();

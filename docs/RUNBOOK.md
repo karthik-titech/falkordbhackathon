@@ -140,3 +140,40 @@ speaker's name, and writes cited profile/topic evidence and per-person research
 status into FalkorDB. It uses ordinary public HTTP fetching, not the Bright Data
 personal-profile scraper. Conference-only evidence is marked separately from an
 individual professional bio. Personal social URLs are excluded from this batch.
+
+## Voice playback
+
+Opening lines and follow-up drafts have an on-demand Listen control. The server
+uses the same configured OpenAI credential as Decisions, via `DECISIONS_API_KEY`;
+the browser never receives the credential. Speech uses a separate Audio API call,
+not the abstract-feature decision model. Requests contain only the selected text
+(up to 800 characters), use a fixed voice/model, and return MP3 with no-store.
+Speech requests and audio are excluded from app recordings. Playback does not
+request microphone access. The UI labels the output as AI-generated voice.
+
+The adapter currently uses `gpt-4o-mini-tts` on `/v1/audio/speech`. OpenAI documents
+its shutdown on January 6, 2027; migrate this adapter to Realtime before then.
+See [OpenAI speech documentation](https://developers.openai.com/api/docs/guides/text-to-speech).
+
+## Voice-created follow-up actions
+
+The conference page has a microphone and typed-command fallback. A bounded
+20-second recording is transcribed by OpenAI (`gpt-transcribe`); the transcript
+is shown and interpreted as a follow-up request. A unique named conference person
+and one channel are required. Unknown or ambiguous names never silently resolve
+to the currently selected person. The assistant replies and can read its reply.
+
+Follow-ups live in the requester's token-authenticated private FalkorDB graph:
+`(:Person {id:'you'})-[:HAS_ACTION]->(:FollowUp)-[:ABOUT]->(:Contact)`.
+A spoken claim that the user connected on LinkedIn is stored privately as
+`CONNECTED_ON` with `basis='requester_reported'`, never as a verified public edge.
+Every read/write requires the same-call session credential. These calls and raw
+recordings are excluded from app recordings; audio uploads are held in memory.
+The session credential stays in browser session storage; retain that tab/session
+to keep access. The public conference graph and Decisions payload stay separate.
+
+Pending actions appear as orange squares in the local graph view and in My
+follow-up actions. Mark done closes them. Relative intervals and today/tomorrow
+can set a time; explicit local dates are converted to timezone-aware timestamps.
+An optional calendar download carries a reminder; no background notifications,
+LinkedIn messages, email, or SMS are sent by this feature.

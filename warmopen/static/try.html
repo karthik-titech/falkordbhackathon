@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/welcome.css">
   <script src="/static/brand.js"></script>
+  <script src="/static/voice-assistant.js" defer></script>
   <script src="/static/try.js" defer></script>
   <script type="module" src="/static/graph-canvas.js"></script>
 </head>
@@ -47,6 +48,16 @@
           </div>
         </details>
       </div>
+      <section id="voice-assistant" class="voice-assistant" aria-labelledby="voice-assistant-heading">
+        <div class="voice-assistant-heading"><div><h2 id="voice-assistant-heading">Tell me what to remember</h2><p>“Remind me to follow up with Andrea Griffiths via LinkedIn—we connected on LinkedIn.”</p></div><button id="record-followup" type="button" class="followup-action">🎙 Add a voice note</button></div>
+        <label for="followup-command">Your request · speak or type</label>
+        <textarea id="followup-command" rows="2" maxlength="800" placeholder="Remind me to follow up with a person via LinkedIn…"></textarea>
+        <div class="followup-command-controls"><label for="followup-due">Remind me at (optional)<input id="followup-due" type="datetime-local"></label><button id="save-followup" type="button" class="followup-action">Save follow-up</button></div>
+        <p id="voice-assistant-reply" role="status" aria-live="polite">Your follow-ups stay in your private session graph. Recording starts only when you tap the microphone.</p>
+        <div id="voice-reply-playback"></div>
+        <h3>My follow-up actions</h3><div id="saved-followups"><p>No follow-ups saved in this session yet.</p></div>
+        <p class="followup-note">Saved here in FalkorDB. Add a timed action to your calendar for an alert when this page is closed.</p>
+      </section>
       <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
       <section id="graph-route-summary" class="graph-route-summary" aria-live="polite"><p>Choose your starting profile to find the shortest connection.</p></section>
       <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
