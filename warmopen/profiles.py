@@ -185,8 +185,9 @@ def _cache_write(key, value, now):
 def enrich_profile(store, conference_id, linkedin=None, x=None, consent=False, client=None):
     """Infer only existing conference topics from explicitly consented own URLs.
 
-    This function performs read-only topic lookup and never writes profile data to
-    FalkorDB. Raw provider records are discarded after deterministic topic matching.
+    Topic lookup is read-only in the shared event graph. Matched topic IDs and
+    source URLs are copied to a separate token-protected private graph; raw provider
+    records are discarded after deterministic topic matching.
     """
     empty = {"topic_ids": [], "topics": [], "sources": []}
     if consent is not True:
@@ -222,6 +223,7 @@ def enrich_profile(store, conference_id, linkedin=None, x=None, consent=False, c
 
     now = time.monotonic()
     collected = {}
+    topic_sources = {}
     sources = []
     errors = []
     pending = False
@@ -233,6 +235,10 @@ def enrich_profile(store, conference_id, linkedin=None, x=None, consent=False, c
             had_success = True
             collected.update((item["id"], item) for item in cached["topics"])
             sources.append({"url": url, "platform": platform})
+            for item in cached["topics"]:
+                topic_sources.setdefault(item["id"], {})[url] = {
+                    "url": url, "platform": platform,
+                }
             continue
         try:
             payload = client(platform, url)
@@ -255,6 +261,10 @@ def enrich_profile(store, conference_id, linkedin=None, x=None, consent=False, c
         had_success = True
         collected.update((item["id"], item) for item in matched)
         sources.append({"url": url, "platform": platform})
+        for item in matched:
+            topic_sources.setdefault(item["id"], {})[url] = {
+                "url": url, "platform": platform,
+            }
         _cache_write(cache_key, {"topics": matched}, now)
 
     result = dict(empty)
@@ -276,4 +286,18 @@ def enrich_profile(store, conference_id, linkedin=None, x=None, consent=False, c
         result["status"] = "complete"
     else:
         result["status"] = "no_profile_data"
+    if had_success and sources:
+        session_topics = [
+            {"id": item["id"], "name": item["name"],
+             "sources": list(topic_sources.get(item["id"], {}).values())}
+            for item in result["topics"]
+        ]
+        try:
+            from .profile_sessions import create_profile_session
+
+            result["profile_session"] = create_profile_session(store, session_topics)
+        except Exception:
+            # Do not leak datastore details or issue an unusable session token.
+            result["status"] = "profile_storage_failed"
+            result.pop("profile_session", None)
     return result

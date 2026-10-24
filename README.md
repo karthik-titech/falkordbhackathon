@@ -35,6 +35,13 @@ with public sources where available. Conversation fit is uncalibrated. When the
 model cannot assess a match, a separately labeled rough starting estimate uses
 available evidence counts; it is not a prediction of friendship.
 Public post tone is summarized as context, not a verified assessment of a person.
+A consented profile request creates a private session-scoped You node. Profile
+fetch failure leaves its interests empty. Topic links show cited professional
+subjects and selected interests, separately from connections through people.
+The map highlights a shortest cited people-to-people route for a selected public
+starting profile, or a clearly labeled shared-interest route from You through a
+matching topic. Three color-coded groups below the map list mirrors, explicit
+capability complements, and unexpected adjacent expertise across the roster.
 
 ## Plan a conference conversation
 
@@ -66,3 +73,17 @@ you can check their support.
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+## Contributors
+
+- Karthik — product direction and maintainer.
+- Codex (OpenAI) — implementation, debugging, tests, and interface design.
+
+## Graph visualization
+
+The conference map uses the official FalkorDB UI Canvas component
+(`@falkordb/canvas` 0.3.3), bundled locally with its licenses. It supports 3D orbit,
+2D viewing, and network, tree, and radial layouts. Node colors show supported
+connection categories; relationship colors distinguish co-presenting, shared
+work, and coauthorship. A basic accessible SVG view remains available if the
+component cannot start, and the searchable roster provides keyboard navigation.

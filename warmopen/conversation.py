@@ -6,7 +6,7 @@ import ipaddress
 import re
 from urllib.parse import parse_qsl, urlsplit
 
-from .directory import _evidence
+from .directory import _evidence, _valid_public_evidence
 from .tryflow import public_people, public_try_paths
 
 _REASONS = {
@@ -20,6 +20,56 @@ _MENTION_SIGNAL_KEYS = (
     "critical_mention_count", "unclear_mention_count", "recent_mention_count",
     "mention_source_count",
 )
+_TOPIC_STOPWORDS = {
+    "and", "for", "from", "into", "with", "the", "using", "build", "building",
+    "systems", "system", "applications", "application", "technology", "technologies",
+}
+_TOPIC_ALIASES = {"agents": "agent", "agentic": "agent", "infra": "infrastructure",
+                  "cloudinfra": "infrastructure", "databases": "database"}
+_RELATED_DOMAINS = {
+    "agent": {"cloud", "infrastructure", "security", "deployment"},
+    "cloud": {"agent", "security", "infrastructure", "deployment"},
+    "infrastructure": {"agent", "cloud", "security", "deployment"},
+    "security": {"agent", "cloud", "infrastructure"},
+}
+
+
+def _topic_tokens(topic_id, topic):
+    text = f"{topic_id} {topic.get('name', '')}".casefold()
+    raw = re.findall(r"[a-z0-9]+", text)
+    tokens = {_TOPIC_ALIASES.get(token, token) for token in raw
+              if token not in _TOPIC_STOPWORDS and len(token) > 2}
+    return tokens
+
+
+def related_topic_pairs(source_topics, target_topics):
+    """Pair distinct public professional topics with a fixed lexical/domain map."""
+    pairs = []
+    for source_id, source_topic in sorted(source_topics.items()):
+        source_tokens = _topic_tokens(source_id, source_topic)
+        for target_id, target_topic in sorted(target_topics.items()):
+            if source_id == target_id:
+                continue
+            target_tokens = _topic_tokens(target_id, target_topic)
+            if (source_tokens & target_tokens
+                    or any(token in _RELATED_DOMAINS.get(other, set())
+                           for token in source_tokens for other in target_tokens)):
+                pairs.append({
+                    "source": {"id": source_id, "name": source_topic.get("name") or source_id},
+                    "target": {"id": target_id, "name": target_topic.get("name") or target_id},
+                    "relation": "related",
+                })
+    return pairs
+
+
+def _topic_names(store, topic_ids):
+    ids = sorted({topic_id for topic_id in topic_ids if isinstance(topic_id, str)})
+    if not ids:
+        return {}
+    rows = store.query(store.event(),
+                       "MATCH (t:Topic) WHERE t.id IN $ids RETURN t.id, t.name",
+                       {"ids": ids}).result_set
+    return {topic_id: name for topic_id, name in rows if isinstance(topic_id, str)}
 
 
 def _empty_mentions(status="not_requested"):
@@ -195,7 +245,8 @@ def _source_seeking(store, source):
 
 def public_pair_context(store, source, target, interest_topic_ids=(), seeking_topic_ids=()):
     """Classify a public pair from cited facts, with optional declared topic choices."""
-    public_ids = {item["id"] for item in public_people(store)}
+    public_people_by_id = {item["id"]: item["name"] for item in public_people(store)}
+    public_ids = set(public_people_by_id)
     target_listed = isinstance(target, str) and target in public_ids
     source_listed = isinstance(source, str) and source in public_ids
     source_valid = source is None or source_listed
@@ -208,6 +259,12 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
     source_seeking, seeking_evidence = _source_seeking(store, source)
     shared = (set(source_topics) | set(interest_topic_ids)) & set(target_topics)
     sought = (source_seeking | set(seeking_topic_ids)) & set(target_topics)
+    declared_names = _topic_names(store, set(interest_topic_ids) | set(seeking_topic_ids))
+    related_sources = dict(source_topics)
+    for topic_id in interest_topic_ids:
+        related_sources.setdefault(topic_id, {
+            "name": declared_names.get(topic_id, topic_id), "evidence_ids": set()})
+    related_pairs = related_topic_pairs(related_sources, target_topics)
     evidence_ids = set(seeking_evidence)
     source_evidence_ids = {eid for topic in source_topics.values() for eid in topic["evidence_ids"]}
     target_evidence_ids = {eid for topic in target_topics.values() for eid in topic["evidence_ids"]}
@@ -222,6 +279,9 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
             evidence_ids.update(target_topic_evidence)
             for evidence_id in target_topic_evidence:
                 opener_topic_matches[evidence_id].add(topic_id)
+    for pair in related_pairs:
+        evidence_ids.update(related_sources[pair["source"]["id"]]["evidence_ids"])
+        evidence_ids.update(target_topics[pair["target"]["id"]]["evidence_ids"])
 
     routes, route_truncated = ([], False)
     route_evidence_ids = set()
@@ -238,6 +298,8 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
         connection_type, reason_code = "missing_piece", "desired_capability_overlap"
     elif shared:
         connection_type, reason_code = "mirror", "shared_public_topics"
+    elif related_pairs:
+        connection_type, reason_code = "unexpected_connection", "related_professional_topics"
     elif routes:
         connection_type, reason_code = "unexpected_connection", "cited_warm_route"
     else:
@@ -258,13 +320,19 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
     reason = _REASONS[connection_type]
     if source is None and connection_type == "mirror":
         reason = "The target has cited work matching your selected interests."
+    elif connection_type == "unexpected_connection" and related_pairs:
+        reason = ("Your selected professional topics are related to the target's cited work."
+                  if source is None else "The public profiles cite professionally related topics.")
     return {
         "source": source, "target": target,
+        "public_names": public_people_by_id,
         "connection_type": connection_type, "reason_code": reason_code,
         "reason": reason, "features": features,
         "evidence_ids": sorted(evidence_ids), "routes": routes,
         "opener_evidence_ids": sorted(target_evidence_ids | route_evidence_ids),
         "opener_topic_matches": {eid: sorted(ids) for eid, ids in opener_topic_matches.items()},
+        "related_topic_matches": related_pairs,
+        "related_topic_count": len(related_pairs),
         "route_truncated": route_truncated,
         "topic_matches": {"shared": sorted(shared), "seeking": sorted(sought)},
     }
@@ -279,6 +347,45 @@ def _opener_candidates(context, evidence_map, refreshed):
     refresh_by_id = {item["evidence_id"]: item for item in refreshed if item.get("evidence_id")}
     candidates = []
     seen_topics = set()
+    if context.get("source") is not None:
+        for route in context["routes"]:
+            persons = route.get("persons", [])
+            edges = route.get("edges", [])
+            if (route.get("hops") != 2 or len(persons) != 3 or len(set(persons)) != 3
+                    or persons[0] != context["source"] or persons[-1] != context["target"]
+                    or len(edges) != 2):
+                continue
+            mutual_id = persons[1]
+            mutual_name = context.get("public_names", {}).get(mutual_id)
+            edge_evidence_ids = []
+            route_is_cited = True
+            for edge in edges:
+                valid_edge_citations = [
+                    evidence_id for evidence_id in
+                    (edge.get("evidence_id"), edge.get("other_evidence_id"))
+                    if evidence_id in evidence_map
+                    and _valid_public_evidence(evidence_map[evidence_id])]
+                if not valid_edge_citations:
+                    route_is_cited = False
+                    break
+                edge_evidence_ids.extend(valid_edge_citations)
+            edge_evidence_ids = list(dict.fromkeys(edge_evidence_ids))
+            if (not route_is_cited or not isinstance(mutual_name, str) or not mutual_name.strip()
+                    or not edge_evidence_ids):
+                continue
+            if all(edge.get("category") == "co_speaker" for edge in edges):
+                text = f"I noticed we've both presented with {mutual_name}. How do you know them?"
+            else:
+                text = f"I noticed our public work connects through {mutual_name}. How do you know them?"
+            primary_id = edge_evidence_ids[0]
+            candidates.append({
+                "text": text, "evidence_id": primary_id,
+                "evidence_ids": edge_evidence_ids,
+                "url": evidence_map[primary_id]["url"], "style": "public_route",
+                "reason": "Both links in this public route have citations.",
+                "mutual_name": mutual_name, "mutual_person_id": mutual_id,
+            })
+            break
     for evidence_id in sorted(matched_ids):
         evidence = evidence_map.get(evidence_id)
         if not evidence:
@@ -309,6 +416,7 @@ def _opener_candidates(context, evidence_map, refreshed):
                  "public_route" if evidence_id in route_ids else
                  "shared_topic" if evidence_id in context["opener_topic_matches"] else "public_talk")
         candidates.append({"text": text, "evidence_id": evidence_id,
+                           "evidence_ids": [evidence_id],
                            "url": evidence["url"], "style": style,
                            "reason": "Based on a cited public professional source."})
         if len(candidates) == 3:
@@ -321,7 +429,7 @@ def _opener_candidates(context, evidence_map, refreshed):
     while len(candidates) < 3:
         number = len(candidates)
         candidates.append({"text": generic[number], "evidence_id": None,
-                           "url": None, "style": "public_context",
+                           "evidence_ids": [], "url": None, "style": "public_context",
                            "reason": "General conversation prompt; no source attached."})
     return candidates
 
@@ -366,10 +474,12 @@ def _rough_category_scores(features):
     hops = features.get("best_hops")
     route_points = min(15, round(15 / hops)) if hops else 0
     routes = features.get("cited_route_count", 0)
+    related = features.get("related_topic_count", 0)
     return {
         "mirror": min(90, 20 + min(60, overlap * 15) + evidence_points) if overlap else 0,
         "missing_piece": min(90, 25 + min(55, seeking * 15) + evidence_points) if seeking else 0,
-        "unexpected_connection": min(90, 20 + route_points + evidence_points) if routes else 0,
+        "unexpected_connection": min(90, 20 + route_points + min(15, related * 10)
+                                     + evidence_points) if routes or related else 0,
     }
 
 
@@ -474,10 +584,15 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
     decision_payload = conversation_payload(decision_state)
     decision = None
     expected_type = context["connection_type"]
+    related_only = (context["related_topic_count"] > 0
+                    and features["topic_overlap_count"] == 0
+                    and features["seeking_overlap_count"] == 0
+                    and features["cited_route_count"] == 0)
     status = ("no_supported_basis" if expected_type == "unknown" else
+              "related_topics_only" if related_only else
               "no_cited_evidence" if features["professional_evidence_count"] == 0 else
               "decision_unavailable")
-    if (jev is not None and expected_type != "unknown"
+    if (jev is not None and expected_type != "unknown" and not related_only
             and features["professional_evidence_count"] > 0):
         try:
             decision = jev(decision_payload)
@@ -511,7 +626,8 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
         total_score, model_confidence = None, None
 
     rough_total = _rough_evidence_score(features)
-    rough_by_category = _rough_category_scores(features)
+    rough_by_category = _rough_category_scores({
+        **features, "related_topic_count": context["related_topic_count"]})
     limitations = []
     if features["topic_overlap_count"] == 0 and features["seeking_overlap_count"] == 0:
         limitations.append("No shared topic or sought-capability overlap is established.")
@@ -530,7 +646,9 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
         ("missing_piece", "Missing piece", "missing_piece_fit", features["seeking_overlap_count"] > 0,
          "Cited work by the target covers a capability being sought."),
         ("unexpected_connection", "Unexpected connection", "unexpected_connection_fit",
-         features["cited_route_count"] > 0, "A cited public route connects the profiles."),
+         features["cited_route_count"] > 0 or context["related_topic_count"] > 0,
+         ("Cited professional topics are related."
+          if context["related_topic_count"] else "A cited public route connects the profiles.")),
     )
     for kind, label, answer_key, supported, reason in category_specs:
         fit, confidence = _fit_score(answers.get(answer_key) if isinstance(answers, dict) else None)
@@ -555,7 +673,13 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
     opener_answer = answers.get("opener") if isinstance(answers, dict) else None
     selected = opener_answer.get("choice") if isinstance(opener_answer, dict) else None
     opener_confidence = opener_answer.get("confidence") if isinstance(opener_answer, dict) else None
-    if (type_consistent and isinstance(selected, str)
+    mutual_index = next((index for index, candidate in enumerate(candidates)
+                         if candidate.get("mutual_person_id")), None)
+    if mutual_index is not None:
+        order = [mutual_index] + [index for index in range(len(candidates))
+                                  if index != mutual_index]
+        opener_status = "mutual_route_first"
+    elif (type_consistent and isinstance(selected, str)
             and selected in {item["candidate_id"] for item in candidate_features}
             and type(opener_confidence) in (int, float) and math.isfinite(opener_confidence)
             and 0.6 <= opener_confidence <= 1):
@@ -568,7 +692,7 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
         opener_status = "deterministic"
     ranked_openers = [{**candidates[index], "rank": rank}
                       for rank, index in enumerate(order, 1)]
-    if (decision is not None and isinstance(opener_answer, dict)
+    if (mutual_index is None and decision is not None and isinstance(opener_answer, dict)
             and opener_answer.get("choice") == "INSUFFICIENT_EVIDENCE"):
         opener_status = "abstained"
 
@@ -591,6 +715,8 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
                                          else "model_assessment"),
                        "limitations": limitations},
         "context": {**features, "topic_matches": context["topic_matches"],
+                    "related_topic_count": context["related_topic_count"],
+                    "related_topic_matches": context["related_topic_matches"],
                     "evidence_ids": context["evidence_ids"],
                     "public_context_topic_matches": sorted(public_context_topic_matches),
                     "public_context_match_count": len(public_context_topic_matches),

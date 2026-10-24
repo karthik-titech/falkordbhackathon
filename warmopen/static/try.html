@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/welcome.css">
   <script src="/static/brand.js"></script>
   <script src="/static/try.js" defer></script>
+  <script type="module" src="/static/graph-canvas.js"></script>
 </head>
 <body class="public-try explore-page">
   <header>
@@ -32,7 +33,6 @@
           <summary>Map options</summary>
           <div class="graph-map-control-grid">
             <label for="graph-focus">Center on<select id="graph-focus"><option value="">Choose a public profile</option></select></label>
-            <label class="graph-3d-toggle"><input id="graph-3d-toggle" type="checkbox" checked> 3D view</label>
             <label class="graph-compare-toggle"><input id="graph-public-comparison" type="checkbox"> Compare with a public profile</label>
             <div class="graph-zoom" role="group" aria-label="Graph zoom">
               <button id="graph-zoom-out" type="button" aria-label="Zoom out">−</button>
@@ -42,6 +42,8 @@
           </div>
         </details>
       </div>
+      <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
+      <section id="graph-route-summary" class="graph-route-summary" aria-live="polite"><p>Choose your starting profile to find the shortest connection.</p></section>
       <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
       <details id="graph-topic-picker" class="graph-topic-picker" aria-labelledby="graph-topics-heading">
         <summary>Your interests · adjust</summary>
@@ -56,10 +58,11 @@
       </details>
       <p id="graph-status" class="quiet-copy" role="status" aria-live="polite">Loading the conference people graph…</p>
       <div class="graph-layout">
-        <div class="graph-map-column"><div class="graph-map-heading"><strong>Your people map</strong><span>Click a person to explore</span></div><div class="graph-frame">
+        <div class="graph-map-column"><div class="graph-map-heading"><strong>Your people map</strong><span>Click a person to explore</span></div><div class="graph-view-controls" role="group" aria-label="Graph view"><label class="graph-3d-toggle"><input id="graph-3d-toggle" type="checkbox" checked> 3D view</label><label>Layout<select id="graph-layout-mode"><option value="force">Network</option><option value="tree">Tree</option><option value="radial">Radial</option></select></label><button id="graph-fit-view" type="button">Fit to view</button><span id="graph-renderer-label">Loading graph view…</span></div><div class="graph-frame">
+          <falkordb-canvas id="falkordb-people-canvas" hidden aria-label="FalkorDB interactive people graph"></falkordb-canvas>
           <svg id="conference-graph" viewBox="0 0 520 520" role="group" aria-label="Interactive public people graph"></svg>
-          <p class="graph-map-caption">Drag to rotate · Click a circle to meet someone</p>
-        </div><div class="connection-guide" aria-label="Connection categories"><a class="guide-mirror" href="/how-it-works#mirror" title="Their cited work overlaps with your interests."><strong>Mirror ⓘ</strong> Similar interests</a><a class="guide-missing" href="/how-it-works#missing-piece" title="Their cited work covers a capability you are looking for."><strong>Missing piece ⓘ</strong> Skills you need</a><a class="guide-unexpected" href="/how-it-works#unexpected-connection" title="A cited public path connects the compared profiles when no topic overlap applies."><strong>Unexpected connection ⓘ</strong> A public connection</a></div></div>
+          <p class="graph-map-caption">Drag to rotate · Scroll to zoom · Click a person for ideas</p>
+        </div><div class="connection-guide" aria-label="Connection categories"><a class="guide-mirror" href="/how-it-works#mirror" title="Their cited work overlaps with your interests."><strong>Mirror ⓘ</strong> Similar interests</a><a class="guide-missing" href="/how-it-works#missing-piece" title="Their cited work covers a capability you are looking for."><strong>Missing piece ⓘ</strong> Skills you need</a><a class="guide-unexpected" href="/how-it-works#unexpected-connection" title="Related expertise, or a cited public path, beyond a direct interest or capability match."><strong>Unexpected connection ⓘ</strong> Related expertise</a></div></div>
         <aside id="graph-person-detail" class="graph-person-detail" aria-live="polite">
           <h2>Select a profile</h2>
           <p class="quiet-copy">Focus a public profile to inspect its conference role and sources.</p>
@@ -70,6 +73,15 @@
         <li><span class="legend-dot speaker-dot" aria-hidden="true"></span>Scheduled speaker</li>
         <li><span class="legend-line" aria-hidden="true"></span>Cited public relationship</li>
       </ul>
+      <section class="people-matches" aria-labelledby="people-matches-title">
+        <div class="people-matches-heading"><div><p class="eyebrow">FIND YOUR PEOPLE</p><h2 id="people-matches-title">Different people. Different possibilities.</h2></div><a href="/how-it-works#definitions">What do these mean? ↗</a></div>
+        <p id="people-matches-status" class="quiet-copy" role="status">Choose interests to see who could be a good connection.</p>
+        <div class="people-match-columns">
+          <section class="people-match-column match-mirror"><h3><span>↔</span> Mirrors <b id="mirror-count">0</b></h3><p>People who share your interests.</p><div id="mirror-people" class="people-match-list"></div></section>
+          <section class="people-match-column match-missing"><h3><span>＋</span> Missing pieces <b id="missing-count">0</b></h3><p>Complements for what you need.</p><div id="missing-people" class="people-match-list"></div></section>
+          <section class="people-match-column match-unexpected"><h3><span>↗</span> Unexpected connections <b id="unexpected-count">0</b></h3><p>Related expertise you may not have considered.</p><div id="unexpected-people" class="people-match-list"></div></section>
+        </div>
+      </section>
       <details class="graph-roster">
         <summary>Browse people as a list</summary>
         <div class="directory-people-grid">

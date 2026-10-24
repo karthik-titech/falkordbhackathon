@@ -135,6 +135,8 @@ function saveTopicContext(data) {
     interest_topic_ids: Array.from(new Set(topicIds)),
     seeking_topic_ids: [],
     topics,
+    profile_session: data.profile_session || null,
+    profile_sources: Array.isArray(data.sources) ? data.sources : [],
   };
   try {
     sessionStorage.setItem(PROFILE_CONTEXT_KEY, JSON.stringify(context));
@@ -204,7 +206,7 @@ async function enrichProfile(links) {
     if (requestToken !== profileRequestToken) return;
     if (!["complete", "partial", "pending", "provider_unconfigured", "no_conference_topics",
       "no_profile_data", "no_profiles", "provider_error", "topic_lookup_failed",
-      "invalid_profile_url", "consent_required"].includes(data.status)) {
+      "invalid_profile_url", "consent_required", "profile_storage_failed"].includes(data.status)) {
       throw new Error("Profile research unavailable");
     }
     const topicsSaved = saveTopicContext(data);

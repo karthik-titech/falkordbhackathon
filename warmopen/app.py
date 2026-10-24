@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 _STATIC = Path(__file__).with_name("static")
 _REQUEST = re.compile(r"/api/requests/([^/]+)(?:/([^/]+))?\Z")
 _CONFERENCE_PEOPLE = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/people\Z")
+_CONFERENCE_MATCHES = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/matches\Z")
 _CONFERENCE_GRAPH = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/graph\Z")
 _CONFERENCE_TOPICS = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/topics\Z")
 _CONFERENCE_CONVERSATION = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/conversation\Z")
@@ -162,6 +163,20 @@ def _live(store, method, path, body, token, jev, llm, recording=None,
                      for collection in ("confirmed_attendees", "scheduled_speakers")
                      for person in result[collection] for eid in person.get("evidence_ids", [])]
         return _presentation(store, result, citations=citations)
+    if method == "POST" and _CONFERENCE_MATCHES.fullmatch(path):
+        from .proximity import conference_matches
+
+        if set(body) - {"source", "interest_topic_ids", "seeking_topic_ids"}:
+            raise ValueError("Unexpected conference match fields")
+        result = conference_matches(store, _CONFERENCE_MATCHES.fullmatch(path)[1],
+                                    source=body.get("source"),
+                                    interest_topic_ids=body.get("interest_topic_ids"),
+                                    seeking_topic_ids=body.get("seeking_topic_ids"))
+        citations = [{"evidence_id": eid} for item in result.get("items", [])
+                     for eid in item.get("evidence_ids", [])]
+        citations.extend({"evidence_id": eid} for item in result.get("items", [])
+                         for topic in item.get("topics", []) for eid in topic.get("evidence_ids", []))
+        return _presentation(store, result, citations=citations)
     if method == "POST" and _CONFERENCE_GRAPH.fullmatch(path):
         from .proximity import DEFAULT_LIMIT, conference_graph
 
@@ -182,7 +197,9 @@ def _live(store, method, path, body, token, jev, llm, recording=None,
                      for edge in result["edges"] for evidence_id in edge["evidence_ids"]]
         citations.extend({"evidence_id": evidence_id}
                          for node in result["nodes"]
-                         for evidence_id in node.get("context_evidence_ids", []))
+                         for evidence_id in (node.get("context_evidence_ids", []) +
+                                             [eid for topic in node.get("topics", [])
+                                              for eid in topic.get("evidence_ids", [])]))
         return _presentation(store, result, citations=citations)
     if method == "POST" and _CONFERENCE_CONVERSATION.fullmatch(path):
         from .conversation import assess_conversation
@@ -221,8 +238,17 @@ def _live(store, method, path, body, token, jev, llm, recording=None,
             raise ValueError("Invalid LinkedIn profile URL")
         if x is not None and not isinstance(x, str):
             raise ValueError("Invalid X profile URL")
-        return enrich_profile(store, conference_id, linkedin=linkedin, x=x,
-                              consent=consented, client=profile_client)
+        result = enrich_profile(store, conference_id, linkedin=linkedin, x=x,
+                                consent=consented, client=profile_client)
+        if "profile_session" not in result and result.get("status") in {
+                "provider_unconfigured", "provider_error", "pending", "no_profile_data", "no_conference_topics"}:
+            from .profile_sessions import create_profile_session
+
+            try:
+                result["profile_session"] = create_profile_session(store, [])
+            except Exception:
+                result["profile_storage_status"] = "unavailable"
+        return result
     if method == "POST" and path == "/api/try":
         from .tryflow import explore_public
 

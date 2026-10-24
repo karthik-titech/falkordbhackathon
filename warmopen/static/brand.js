@@ -1,1 +1,1 @@
-const PRODUCT_NAME = "Name to come";
+const PRODUCT_NAME = "BrightFalkor";

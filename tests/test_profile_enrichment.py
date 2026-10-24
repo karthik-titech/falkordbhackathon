@@ -2,6 +2,7 @@
 
 import io
 import json
+import threading
 
 import pytest
 
@@ -17,15 +18,22 @@ class _Store:
     def __init__(self, topics):
         self._topics = topics
         self.queries = []
+        self.private_queries = []
+        self.lock = threading.Lock()
 
     def event(self):
         return "event"
 
+    def private(self, owner_id):
+        return "private/" + owner_id
+
     def query(self, graph, cypher, params=None):
-        self.queries.append((graph, cypher, params or {}))
-        assert graph == "event"
-        assert "MATCH (talk:Talk)-[:ABOUT]->(t:Topic)" in cypher
-        return _Result([(item["id"], item["name"]) for item in self._topics])
+        if graph == "event":
+            self.queries.append((graph, cypher, params or {}))
+            assert "MATCH (talk:Talk)-[:ABOUT]->(t:Topic)" in cypher
+            return _Result([(item["id"], item["name"]) for item in self._topics])
+        self.private_queries.append((graph, cypher, params or {}))
+        return _Result([])
 
 
 @pytest.fixture(autouse=True)
@@ -105,12 +113,13 @@ def test_returns_only_known_topics_and_sources_without_profile_text_or_pii():
     result = profiles.enrich_profile(
         store, "event", linkedin="https://linkedin.com/in/owner", consent=True, client=client,
     )
-    assert result == {
-        "topic_ids": ["ai_infra"],
-        "topics": [{"id": "ai_infra", "name": "AI Infrastructure"}],
-        "sources": [{"url": "https://linkedin.com/in/owner", "platform": "linkedin"}],
-        "status": "complete",
-    }
+    assert result["topic_ids"] == ["ai_infra"]
+    assert result["topics"] == [{"id": "ai_infra", "name": "AI Infrastructure"}]
+    assert result["sources"] == [{"url": "https://linkedin.com/in/owner", "platform": "linkedin"}]
+    assert result["status"] == "complete"
+    assert result["profile_session"]["node_id"] == "you"
+    assert result["profile_session"]["name"] == "You"
+    assert result["profile_session"]["interests"][0]["evidence_ids"]
     assert calls == [("linkedin", "https://linkedin.com/in/owner")]
     assert len(store.queries) == 1
     rendered = repr(result)
@@ -135,8 +144,8 @@ def test_x_uses_only_biography_and_categories_and_cache_avoids_second_call():
     kwargs = {"x": "https://x.com/owner", "consent": True, "client": client}
     first = profiles.enrich_profile(store, "event", **kwargs)
     second = profiles.enrich_profile(store, "event", **kwargs)
-    assert first["topic_ids"] == ["robotics"]
-    assert second == first
+    assert first["topic_ids"] == second["topic_ids"] == ["robotics"]
+    assert first["profile_session"]["id"] != second["profile_session"]["id"]
     assert calls == [("x", "https://x.com/owner")]
     assert "Sensitive Name" not in repr(second)
     assert "Climate Tech" not in repr(second)

@@ -118,3 +118,14 @@ from the repository inside the Docker image, with `CONFERENCE_ENV_FILE` pointing
 that file. The import merges bounded batches without copying private owner graphs.
 Cloud startup skips the bundled seed load; import before starting the web service.
 Unset `FALKORDB_URL` to use the local Compose database and automatic seed loading.
+
+
+The public map bundles the official `@falkordb/canvas` 0.3.3 locally. Its 3D mode
+requires WebGL2; a device without it gets a labeled 2D canvas. The SVG fallback
+is used only if the component cannot initialize. Search and the accessible roster
+remain available. The Node package build runs in Docker; no host packages or CDNs
+are needed at runtime. The dependency lock and licenses are in the vendor folder.
+
+The historical frozen product-name test pins the temporary placeholder. Once the
+maintainer chose the product name, that exact placeholder assertion became stale;
+keep the frozen file unchanged and report that failure separately from regressions.
