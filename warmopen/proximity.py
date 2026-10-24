@@ -191,11 +191,18 @@ def conference_graph(store, conference_id, focus=None, query="", limit=DEFAULT_L
     other_edges = [edge for edge in edges
                    if (edge["source"], edge["target"], edge["category"]) not in path_edge_keys]
     edges = path_edges + other_edges[:max(0, MAX_EDGES - len(path_edges))]
+    research_rows = store.query(store.event(),
+        "MATCH (p:Person) WHERE p.id IN $ids RETURN p.id, p.professional_profile_research_status, "
+        "p.professional_profile_source_count, p.professional_profile_researched_at",
+        {"ids": sorted(shown_ids)}).result_set
+    research = {row[0]: {"research_status": row[1], "research_source_count": row[2], "researched_at": row[3]}
+                for row in research_rows if isinstance(row[1], str)}
     nodes = []
     for person in shown:
         topics = person_topics.get(person["id"], {})
         nodes.append({
             "id": person["id"], "name": person["name"],
+            **research.get(person["id"], {}),
             "roles": sorted(person["roles"]), "distance": distances.get(person["id"]),
             "topics": [{"id": topic_id, "name": topic.get("name") or topic_id,
                         "evidence_ids": sorted(topic["evidence_ids"])}

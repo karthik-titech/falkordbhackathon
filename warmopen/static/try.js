@@ -204,6 +204,8 @@ function renderGraphDetail(personId) {
   if (roles.attendee) roleLabels.push("Confirmed attendee");
   if (roles.speaker) roleLabels.push("Scheduled speaker");
   container.append(node("p", roleLabels.join(" · ") || "Public conference profile", "graph-detail-role"));
+  const researchLabels = {complete: "Individual professional bio researched", conference_only: "Conference sources researched · individual bio still needed", unavailable: "Profile research unavailable"};
+  if (researchLabels[graphNode.research_status]) container.append(node("p", researchLabels[graphNode.research_status], "graph-profile-research-status"));
 
   const categories = {
     mirror: {label: "Mirror", className: "graph-category-mirror"},
@@ -347,6 +349,14 @@ function renderConversationResult(container, data) {
   const modelScore = boundedScore(assessment.score);
   const roughScore = boundedScore(assessment.rough_score);
   const useRoughScore = modelScore === null && roughScore !== null;
+  const warm = (Array.isArray(data.ranked_openers) ? data.ranked_openers : []).find(item => item.mutual_name);
+  const warmStatus = node("details", undefined, "warm-intro-status");
+  warmStatus.append(node("summary", warm ? `Warm intro available · via ${warm.mutual_name}` : "Warm intro · no shared person verified yet"));
+  warmStatus.append(node("p", warm
+    ? "The shared-person opener is shown first, with citations for both sides of the public-work connection."
+    : (data.source ? "No fully cited two-hop connection through the same person was found for this pair."
+      : "Your profile links supply professional interests, not a verified contacts list. A personal mutual contact has not been established.")));
+  container.append(warmStatus);
   renderOpeningLines(container, data.ranked_openers);
   const match = node("section", undefined, "graph-match-summary");
   match.append(node("h3", "Why this person"));
@@ -447,7 +457,7 @@ function renderOpeningLines(container, rankedOpeners) {
     const rank = Number.isInteger(item.rank) && item.rank > 0 ? item.rank : index + 1;
     card.append(node("span", String(rank).padStart(2, "0"), "graph-opener-rank"));
     if (typeof item.mutual_name === "string" && item.mutual_name.trim()) {
-      card.append(node("span", `Connection through ${item.mutual_name.trim()}`, "opener-mutual"));
+      card.append(node("span", `Warm intro · shared connection through ${item.mutual_name.trim()}`, "opener-mutual"));
     }
     card.append(node("p", item.text.trim(), "graph-opener-text"));
     const sourceIds = Array.from(new Set([item.evidence_id,

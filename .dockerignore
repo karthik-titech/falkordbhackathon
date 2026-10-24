@@ -11,3 +11,6 @@
 **/*.pyc
 **/.env
 **/.env.*
+
+!scripts/
+!scripts/research_github_profiles.py

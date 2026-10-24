@@ -578,3 +578,9 @@ body.explore-page { padding-bottom: 0; }
 .system-one-arrow { text-align: center; color: #8fa485; font-size: 22px; }
 .system-one-details { margin-top: 24px; }
 @media (max-width: 800px) { .system-one-flow { grid-template-columns: minmax(0,1fr); gap: 9px; } .system-one-arrow { transform: rotate(90deg); } }
+
+.warm-intro-status { margin: 16px 0 12px; border: 1px solid #d4e2d0; padding: 9px 12px; border-radius: 9px; background: #f3f7ee; }
+.warm-intro-status summary { font-size: 12px; color: #48694b; cursor: pointer; }
+.warm-intro-status p { color: #6c7d65; font-size: 11px; line-height: 1.6; }
+
+.graph-profile-research-status { margin: 8px 0 14px; color: #66785e; font-size: 11px; line-height: 1.5; }

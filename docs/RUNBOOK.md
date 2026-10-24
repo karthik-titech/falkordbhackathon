@@ -129,3 +129,14 @@ are needed at runtime. The dependency lock and licenses are in the vendor folder
 The historical frozen product-name test pins the temporary placeholder. Once the
 maintainer chose the product name, that exact placeholder assertion became stale;
 keep the frozen file unchanged and report that failure separately from regressions.
+
+
+## Professional speaker research
+
+The Docker image includes `scripts/research_github_profiles.py`. Supply a private
+manifest of verified public professional URLs and run it with `--report` pointing
+to a mounted output directory. It fetches each eligible URL once, checks the
+speaker's name, and writes cited profile/topic evidence and per-person research
+status into FalkorDB. It uses ordinary public HTTP fetching, not the Bright Data
+personal-profile scraper. Conference-only evidence is marked separately from an
+individual professional bio. Personal social URLs are excluded from this batch.

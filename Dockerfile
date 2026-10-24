@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir falkordb==1.7.1 pytest==9.1.1
 COPY pyproject.toml ./
 COPY warmopen/ ./warmopen/
 COPY tests/ ./tests/
+COPY scripts/research_github_profiles.py ./scripts/research_github_profiles.py
 COPY data/seed_public.json ./data/seed_public.json
 
 EXPOSE 8080
