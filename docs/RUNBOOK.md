@@ -1,4 +1,4 @@
-# Warm Open demo
+# Demo runbook
 
 Run live on Daytona. Use a phone hotspot first if venue wifi fails. Run laptop
 replay second if the preview URL is unavailable. Replay needs Python 3.11+ and
