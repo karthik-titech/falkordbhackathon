@@ -358,6 +358,7 @@ function renderConversationResult(container, data) {
       : "Your profile links supply professional interests, not a verified contacts list. A personal mutual contact has not been established.")));
   container.append(warmStatus);
   renderOpeningLines(container, data.ranked_openers);
+  renderNextActions(container, data);
   const match = node("section", undefined, "graph-match-summary");
   match.append(node("h3", "Why this person"));
   const matchLabels = {mirror: "Mirror", missing_piece: "Missing piece",
@@ -435,6 +436,41 @@ function renderConversationResult(container, data) {
   if (refresh.status && refresh.status !== "not_requested") {
     container.append(node("p", statuses[refresh.status] || "Public context refresh status is unknown.", "graph-refresh-status"));
   }
+}
+function renderNextActions(container, data) {
+  const targetName = names[data.target] || conferenceGraph?.nodes?.find(person => person.id === data.target)?.name || "";
+  const firstName = targetName.split(" ")[0] || "there";
+  const opener = data.ranked_openers?.find(item => typeof item.text === "string")?.text || "What are you working on right now?";
+  const section = node("section", undefined, "next-actions");
+  section.append(node("h3", "Keep the conversation going"));
+  const draft = node("textarea", undefined, "followup-draft");
+  draft.setAttribute("aria-label", "Edit your follow-up message");
+  draft.rows = 4;
+  draft.value = `Hi ${firstName}! ${opener.replace(/^Hey(?: [^,]+)?,\s*/i, "")} Would you be open to connecting?`;
+  section.append(draft);
+  const actions = node("div", undefined, "followup-actions");
+  const linkedin = $("linkedin-followup-link").content.firstElementChild.cloneNode(true);
+  const linkedinUrl = new URL(linkedin.href);
+  linkedinUrl.searchParams.set("keywords", targetName);
+  linkedin.href = linkedinUrl.href;
+  linkedin.className = "followup-action";
+  const email = node("a", "Draft email", "followup-action");
+  const text = node("a", "Draft text", "followup-action");
+  const updateLinks = () => {
+    email.href = `mailto:?subject=${encodeURIComponent("Let's connect after the conference")}&body=${encodeURIComponent(draft.value)}`;
+    text.href = `sms:?body=${encodeURIComponent(draft.value)}`;
+  };
+  draft.addEventListener("input", updateLinks);
+  updateLinks();
+  const copy = node("button", "Copy message", "followup-action");
+  copy.type = "button";
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(draft.value); copy.textContent = "Copied ✓"; }
+    catch (_) { draft.focus(); draft.select(); copy.textContent = "Message selected"; }
+  });
+  actions.append(linkedin, email, text, copy);
+  section.append(actions, node("p", "Review the message and choose a recipient in LinkedIn, your email app, or Messages. Nothing is sent automatically.", "followup-note"));
+  container.append(section);
 }
 function boundedScore(value) {
   return typeNumber(value) && value >= 0 && value <= 100 ? value : null;

@@ -326,6 +326,8 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
     return {
         "source": source, "target": target,
         "public_names": public_people_by_id,
+        "opener_target_topics": {eid: sorted(topic_id for topic_id, topic in target_topics.items() if eid in topic["evidence_ids"]) for eid in target_evidence_ids},
+        "topic_names": {topic_id: topic.get("name") or topic_id for topic_id, topic in target_topics.items()},
         "connection_type": connection_type, "reason_code": reason_code,
         "reason": reason, "features": features,
         "evidence_ids": sorted(evidence_ids), "routes": routes,
@@ -339,8 +341,6 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
 
 
 def _opener_candidates(context, evidence_map, refreshed):
-    from .tryflow import _template
-
     route_ids = {eid for route in context["routes"] for edge in route["edges"]
                  for eid in (edge.get("evidence_id"), edge.get("other_evidence_id")) if eid}
     matched_ids = set(context["opener_evidence_ids"]) & set(evidence_map)
@@ -386,32 +386,48 @@ def _opener_candidates(context, evidence_map, refreshed):
                 "mutual_name": mutual_name, "mutual_person_id": mutual_id,
             })
             break
-    for evidence_id in sorted(matched_ids):
+    # Prefer evidence tied to the user's shared interests over general articles.
+    ordered_ids = sorted(matched_ids, key=lambda eid: (
+        eid not in context["opener_topic_matches"], eid not in route_ids, eid))
+    target_name = context.get("public_names", {}).get(context["target"], "")
+    greeting = f"Hey {target_name.split()[0]}, " if target_name else "Hey, "
+    for evidence_id in ordered_ids:
         evidence = evidence_map.get(evidence_id)
         if not evidence:
             continue
         refreshed_item = refresh_by_id.get(evidence_id)
-        if refreshed_item and (refreshed_item.get("title") or refreshed_item.get("excerpt")):
-            context_text = refreshed_item.get("title") or refreshed_item.get("excerpt", "")
-            context_text = " ".join(context_text.split())[:160].rstrip(".,;:!? ")
-            text = f"I saw this public update about {context_text}. What are you exploring next?"
-        else:
-            talk = re.search(r'presented "([^"\n]+)"', evidence.get("claim", ""))
-            if talk:
-                title = talk.group(1).strip()[:130]
-                if title.casefold() in seen_topics:
-                    continue
-                seen_topics.add(title.casefold())
-                prompts = (
-                    f'Your session on “{title}” caught my eye. What is the one idea you hope people take away?',
-                    f'I saw you are speaking about “{title}”. What got you interested in that?',
-                    f'On “{title}”, what is something people often get wrong?',
-                )
-                text = prompts[len(candidates)]
+        shared_topic_ids = context.get("opener_topic_matches", {}).get(evidence_id, [])
+        topic_ids = shared_topic_ids or context.get("opener_target_topics", {}).get(evidence_id, [])
+        topic = next((context.get("topic_names", {}).get(tid) for tid in topic_ids
+                      if context.get("topic_names", {}).get(tid)), None)
+        talk = re.search(r'presented "([^"\n]+)"', evidence.get("claim", ""))
+        if topic:
+            key = topic.casefold()
+            if key in seen_topics:
+                continue
+            seen_topics.add(key)
+            prompts = (
+                f"{greeting}I'm interested in {topic} too—what are you working on right now?",
+                f"{greeting}your work on {topic} caught my eye—what's the hardest problem you're tackling?",
+                f"{greeting}I'd love your take on {topic}—what should more people be paying attention to?",
+            )
+            text = prompts[min(len(candidates), 2)]
+            if not shared_topic_ids:
+                text = f"{greeting}your work on {topic} caught my eye—what are you exploring next?"
+        elif talk:
+            title = " ".join(talk.group(1).split())
+            if title.casefold() in seen_topics:
+                continue
+            seen_topics.add(title.casefold())
+            if len(title) > 85:
+                # Long session titles are not natural spoken opening lines.
+                text = f"{greeting}your session caught my eye—what's the one idea you'd want me to take away?"
             else:
-                text = _template(evidence, len(candidates))["text"]
-        if len(text) > 280:
-            text = text[:277].rstrip() + "…"
+                text = f"{greeting}what sparked your session on “{title}”?"
+        else:
+            # A page excerpt may contain navigation or another author's words.
+            # Keep that in the citation rather than claiming the target wrote it.
+            continue
         style = ("public_context" if refreshed_item else
                  "public_route" if evidence_id in route_ids else
                  "shared_topic" if evidence_id in context["opener_topic_matches"] else "public_talk")
@@ -426,6 +442,12 @@ def _opener_candidates(context, evidence_map, refreshed):
         "Which session are you most looking forward to?",
         "What idea from today has stuck with you?",
     )
+    if matched_ids:
+        generic = (
+            f"{greeting}what are you most excited to be building right now?",
+            f"{greeting}what problem would you love to find a collaborator for here?",
+            f"{greeting}what conversation would make this conference worthwhile for you?",
+        )
     while len(candidates) < 3:
         number = len(candidates)
         candidates.append({"text": generic[number], "evidence_id": None,
