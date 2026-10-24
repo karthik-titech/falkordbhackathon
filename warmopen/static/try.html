@@ -23,6 +23,9 @@
       <p class="graph-hero-copy">A room full of people. A better way to break the ice.</p>
       <ol class="explore-steps" aria-label="How it works"><li><span>1</span> Find someone</li><li><span>2</span> Explore the connection</li><li><span>3</span> Start a conversation</li></ol>
       <p class="graph-context-copy">Connections show sourced public work; graph distance is not physical location.</p>
+      <section id="your-profile-summary" class="your-profile-summary" aria-label="Your profile and recommendations">
+        <div class="your-profile-avatar" aria-hidden="true">Y</div><div><h2 id="your-profile-title">Find people relevant to you</h2><p id="your-profile-description">Add your own LinkedIn or X profile. You do not need to be in the attendee list.</p><div id="your-profile-topics" class="person-topics"></div></div><div class="your-profile-actions"><a id="your-profile-link" href="/start" class="primary-link">Add my profile ↗</a><button id="your-profile-interests" type="button" hidden>Adjust my interests</button></div>
+      </section>
       <div class="graph-tools" role="group" aria-label="Graph filters and controls">
         <div class="graph-search-control">
           <label for="graph-search">Find a person</label>
@@ -32,6 +35,7 @@
         <details class="graph-map-options">
           <summary>Map options</summary>
           <div class="graph-map-control-grid">
+          <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
             <label for="graph-focus">Center on<select id="graph-focus"><option value="">Choose a public profile</option></select></label>
             <label class="graph-compare-toggle"><input id="graph-public-comparison" type="checkbox"> Compare with a public profile</label>
             <div class="graph-zoom" role="group" aria-label="Graph zoom">
@@ -42,7 +46,6 @@
           </div>
         </details>
       </div>
-      <div class="graph-starting-profile"><label for="graph-my-profile">Your starting profile</label><select id="graph-my-profile"><option value="">Choose your name from the public roster…</option></select><p id="graph-starting-note">Choose your listed profile to see a route to the person you select. Your profile links are not matched automatically.</p></div>
       <section id="graph-route-summary" class="graph-route-summary" aria-live="polite"><p>Choose your starting profile to find the shortest connection.</p></section>
       <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
       <details id="graph-topic-picker" class="graph-topic-picker" aria-labelledby="graph-topics-heading">
@@ -74,7 +77,7 @@
         <li><span class="legend-line" aria-hidden="true"></span>Cited public relationship</li>
       </ul>
       <section class="people-matches" aria-labelledby="people-matches-title">
-        <div class="people-matches-heading"><div><p class="eyebrow">FIND YOUR PEOPLE</p><h2 id="people-matches-title">Different people. Different possibilities.</h2></div><a href="/how-it-works#definitions">What do these mean? ↗</a></div>
+        <div class="people-matches-heading"><div><p class="eyebrow">FIND YOUR PEOPLE</p><h2 id="people-matches-title">People relevant to you.</h2></div><a href="/how-it-works#definitions">What do these mean? ↗</a></div>
         <p id="people-matches-status" class="quiet-copy" role="status">Choose interests to see who could be a good connection.</p>
         <div class="people-match-columns">
           <section class="people-match-column match-mirror"><h3><span>↔</span> Mirrors <b id="mirror-count">0</b></h3><p>People who share your interests.</p><div id="mirror-people" class="people-match-list"></div></section>

@@ -7,7 +7,7 @@ let conferenceRoster = {}, conferenceGraph = null, defaultGraphFocus = "", graph
 let graphYaw = -0.35, graphPitch = 0.28, graphPointer = null, suppressGraphClick = false;
 let conferenceTopics = [], interestTopicIds = new Set(), seekingTopicIds = new Set(), profileTopicContext = null;
 let conversationResults = new Map(), conversationBusy = false;
-let peopleMatchesKey = "", peopleMatchesRequest = 0;
+let peopleMatchesKey = "", peopleMatchesRequest = 0, initialRecommendationChosen = false;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const GRAPH_LIMIT = 48;
@@ -596,6 +596,22 @@ function graphPositions(graph, use3D = $("graph-3d-toggle").checked) {
   }
   return positions;
 }
+function renderYourProfile() {
+  const conferenceId = new URLSearchParams(window.location.search).get("conference") || "";
+  const own = profileTopicContext?.profile_session;
+  const link = $("your-profile-link");
+  link.href = `/start?conference=${encodeURIComponent(conferenceId)}`;
+  link.textContent = own ? "Update my profile ↗" : "Add my profile ↗";
+  $("your-profile-title").textContent = own ? "Your connections start with you" : "Find people relevant to you";
+  $("your-profile-description").textContent = own
+    ? (interestTopicIds.size ? `Matching attendees against ${interestTopicIds.size} of your interests. Select a person to see the reason and an opening line.`
+      : "Your You node is ready. We haven’t found matching conference interests yet—add a few topics to see relevant people.")
+    : "Add your LinkedIn or X profile to create your own node. You do not need to be in the attendee list.";
+  const topics = $("your-profile-topics");
+  topics.replaceChildren();
+  for (const topic of conferenceTopics.filter(t => interestTopicIds.has(t.id)).slice(0, 8)) topics.append(node("span", topic.name, "person-topic-chip"));
+  $("your-profile-interests").hidden = !own;
+}
 function graphWithTopics(base) {
   const own = profileTopicContext?.profile_session;
   const ownSelected = own && $("graph-my-profile").value === `self:${own.id}`;
@@ -636,7 +652,7 @@ function graphWithTopics(base) {
       : {status: "no_supported_path", persons: [], hops: null, edges: [], basis: "shared_interest"};
     source = ownId;
   }
-  return {...base, nodes, edges, shortest_path: route, comparison_source: source};
+  return {...base, nodes, edges, center_id: ownSelected ? source : base.center_id, target_id: base.center_id, shortest_path: route, comparison_source: source};
 }
 function routeEdgeKey(edge) {
   return JSON.stringify([...[edge.source, edge.target].sort(), edge.category]);
@@ -926,6 +942,7 @@ async function loadConferenceGraph({focus, query = "", returnFocus = false} = {}
       $("graph-focus").value = data.center_id;
     }
     renderConferenceGraph(returnFocus);
+    renderYourProfile();
     const shown = data.nodes.length;
     const total = Number.isInteger(data.total_count) ? data.total_count : shown;
     const rosterCount = Number.isInteger(data.roster_count) ? data.roster_count : conferenceRosterCount();
@@ -962,6 +979,7 @@ async function loadPeopleMatches() {
     if (request !== peopleMatchesRequest) return;
     Object.assign(evidence, data.evidence || {});
     const items = Array.isArray(data.items) ? data.items.filter(person => ["mirror", "missing_piece", "unexpected_connection"].includes(person.category)) : [];
+    items.sort((a, b) => (b.topics?.length || 0) - (a.topics?.length || 0) || a.name.localeCompare(b.name));
     const groups = [["mirror", "mirror"], ["missing_piece", "missing"], ["unexpected_connection", "unexpected"]];
     for (const [category, prefix] of groups) {
       const list = $(`${prefix}-people`), matching = items.filter(person => person.category === category);
@@ -989,6 +1007,14 @@ async function loadPeopleMatches() {
         const id = (person.evidence_ids || []).find(id => evidence[id] && safeHttpUrl(evidence[id].url));
         if (id) card.append(sourceLink(evidence[id].url, "See the public source ↗"));
         list.append(card);
+      }
+    }
+    if (!initialRecommendationChosen && profileTopicContext?.profile_session && items.length && $("graph-my-profile").value.startsWith("self:")) {
+      initialRecommendationChosen = true;
+      const recommended = items.find(item => item.category === "missing_piece") || items.find(item => item.category === "mirror") || items[0];
+      if (conferenceGraph?.center_id !== recommended.id) {
+        $("graph-focus").value = recommended.id;
+        loadConferenceGraph({focus: recommended.id, query: ""});
       }
     }
     const unknown = Number.isInteger(data.unclassified_count) ? data.unclassified_count : 0;
@@ -1225,6 +1251,11 @@ $("graph-zoom-reset").onclick = () => {
   loadConferenceGraph({focus: defaultGraphFocus || undefined, query: ""});
 };
 $("graph-3d-toggle").onchange = () => renderConferenceGraph();
+$("your-profile-interests").onclick = () => {
+  $("graph-topic-picker").open = true;
+  $("graph-topic-picker").scrollIntoView({behavior: "instant", block: "center"});
+  $("graph-topic-picker").querySelector("summary").focus();
+};
 $("graph-my-profile").onchange = () => {
   $("try-source-filter").value = "";
   populateSelect("try-source", "try-source-filter");

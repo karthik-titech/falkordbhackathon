@@ -212,7 +212,7 @@ async function enrichProfile(links) {
     const topicsSaved = saveTopicContext(data);
     showEnrichment(data);
     enrichmentFinished = true;
-    $("continue-button").textContent = "See people at this conference";
+    $("continue-button").textContent = "See people matched to me";
     if (["complete", "partial"].includes(data.status) && topicsSaved > 0) {
       $("profile-status").textContent = data.status === "partial"
         ? "Some profile sources were unavailable; matched topic interests are ready for this session."

@@ -24,12 +24,13 @@ function fallback() {
 
 async function apply(options) {
   const {graph, edges, dimension, layout, onSelect} = options;
+  const targetId = graph.target_id || graph.center_id;
   const userSource = graph.comparison_source && graph.comparison_source === document.getElementById("graph-my-profile").value;
   const route = graph.shortest_path;
   const routeIds = new Set(route?.status === "ok" ? route.persons : []);
   const routeKeys = new Set((route?.edges || []).map(e => JSON.stringify([...[e.source, e.target].sort(), e.category])));
   const isPathEdge = e => routeKeys.has(JSON.stringify([...[e.source, e.target].sort(), e.category]));
-  const nextSignature = JSON.stringify([graph.center_id, route?.persons, graph.comparison_source, graph.nodes.map(n => [n.id, n.connection_type]),
+  const nextSignature = JSON.stringify([graph.center_id, targetId, route?.persons, graph.comparison_source, graph.nodes.map(n => [n.id, n.connection_type]),
     edges.map(e => [e.source, e.target, e.category])]);
   const lookup = new Map(graph.nodes.map((n, i) => [n.id, i + 1]));
   canvas.hidden = false;
@@ -62,7 +63,7 @@ async function apply(options) {
   }
   if (nextSignature !== signature) {
     canvas.setConfig({
-      isNodeSelected: node => node.data?.personId === graph.center_id || node.data?.personId === graph.comparison_source,
+      isNodeSelected: node => node.data?.personId === targetId || node.data?.personId === graph.comparison_source,
       isLinkSelected: link => link.data?.onPath === true,
       dimmed: routeIds.size > 1, dimOpacity: 0.25,
       isNodeDimmed: node => !routeIds.has(node.data?.personId),
@@ -71,8 +72,9 @@ async function apply(options) {
     canvas.setData({
       nodes: graph.nodes.map((n, i) => ({id: i + 1, labels: [n.kind === "topic" ? "Topic" : "Person"], visible: true,
         shape: n.kind === "topic" ? "square" : "circle",
-        size: n.kind === "topic" ? 24 : n.kind === "self" || n.id === graph.center_id ? 44 : 32,
-        color: n.kind === "topic" ? "#af95d0" : n.id === graph.comparison_source ? "#3c83c4" : n.id === graph.center_id ? "#254e3b" : routeIds.has(n.id) ? "#e3a23f" : palette[n.connection_type]
+        ...(n.kind === "self" ? {x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 0} : {}),
+        size: n.kind === "topic" ? 24 : n.kind === "self" || n.id === targetId ? 44 : 32,
+        color: n.kind === "topic" ? "#af95d0" : n.id === graph.comparison_source ? "#3c83c4" : n.id === targetId ? "#254e3b" : routeIds.has(n.id) ? "#e3a23f" : palette[n.connection_type]
           || (n.roles.includes("confirmed_attendee") ? "#61afc3" : "#e8c174"),
         caption: "name", data: {name: (userSource && n.id === graph.comparison_source ? `You · ${n.name}` : n.name).replace(/[<>&]/g, char => ({"<": "‹", ">": "›", "&": "＆"}[char])), personId: n.id, kind: n.kind || "person", topics: n.topics || []}})),
       links: edges.filter(e => lookup.has(e.source) && lookup.has(e.target)).map((e, i) => ({

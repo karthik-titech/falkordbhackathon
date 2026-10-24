@@ -555,3 +555,14 @@ body.explore-page { padding-bottom: 0; }
 .people-match-card .person-topic-chip { background: var(--match-bg); color: var(--match-ink); font-size: 10px; }
 .people-match-card > a { font-size: 10px; color: var(--match-ink); }
 @media (max-width: 900px) { .people-match-columns { grid-template-columns: minmax(0,1fr); } .people-match-list { max-height: 410px; } .people-matches-heading { align-items: start; flex-direction: column; gap: 14px; } }
+.your-profile-summary { display: grid; grid-template-columns: 52px minmax(0,1fr) auto; align-items: center; gap: 18px; margin: 24px 0; padding: 24px; border: 1px solid #c7d9c1; border-radius: 18px; background: #eaf2e3; }
+.your-profile-avatar { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: #3c83c4; color: white; font: 600 21px system-ui,sans-serif; }
+.your-profile-summary h2 { margin: 0 0 7px; font: 500 25px/1.2 Georgia,serif; letter-spacing: -.02em; text-transform: none; }
+.your-profile-summary p { margin: 0; font-size: 13px; color: #60755c; line-height: 1.6; }
+.your-profile-summary .person-topics { margin: 10px 0 0; }
+.your-profile-summary .person-topics:empty { display: none; }
+.your-profile-actions { display: grid; gap: 8px; }
+.your-profile-actions .primary-link { min-height: 42px; font-size: 12px; }
+.explore-page .your-profile-actions button { min-height: 36px; padding: 7px 10px; border: 1px solid #c2d2b9; border-radius: 8px; color: #315d4d; background: #ffffff80; font: 500 12px system-ui,sans-serif; text-transform: none; letter-spacing: 0; }
+.graph-map-control-grid .graph-starting-profile { grid-column: 1 / -1; grid-template-columns: 1fr; padding: 0 0 12px; border-bottom: 1px solid #d9e2d2; }
+@media (max-width: 640px) { .your-profile-summary { grid-template-columns: 42px minmax(0,1fr); padding: 20px; gap: 13px; } .your-profile-avatar { width: 42px; height: 42px; } .your-profile-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; } .your-profile-summary h2 { font-size: 22px; } }
