@@ -7,7 +7,7 @@ let conferenceRoster = {}, conferenceGraph = null, defaultGraphFocus = "", graph
 let graphYaw = -0.35, graphPitch = 0.28, graphPointer = null, suppressGraphClick = false;
 let conferenceTopics = [], interestTopicIds = new Set(), seekingTopicIds = new Set(), profileTopicContext = null;
 let conversationResults = new Map(), conversationBusy = false;
-let peopleMatchesKey = "", peopleMatchesRequest = 0, initialRecommendationChosen = false;
+let peopleMatchesKey = "", peopleMatchesRequest = 0, initialRecommendationChosen = false, targetChosenByUser = false;
 let peopleMatchScores = new Map();
 const DEFAULT_CATEGORY_SCORES = {mirror: 30, missing_piece: 25, unexpected_connection: 20};
 
@@ -196,7 +196,9 @@ function renderGraphDetail(personId) {
   const rosterPerson = conferenceRoster[personId] || {};
   const initials = graphNode.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("");
   container.append(node("div", initials, "person-avatar"));
-  container.append(node("p", "YOUR NEXT CONVERSATION", "graph-detail-kicker"));
+  const comparisonId = graphSourceId();
+  const comparisonName = conferenceRoster[comparisonId]?.name || names[comparisonId];
+  container.append(node("p", comparisonName ? `MATCHING FROM ${comparisonName}` : "YOUR NEXT CONVERSATION", "graph-detail-kicker"));
   container.append(node("h2", graphNode.name));
   const roleLabels = [];
   if (roles.attendee) roleLabels.push("Confirmed attendee");
@@ -284,6 +286,7 @@ function matchContext() {
     seeking_topic_ids: Array.from(seekingTopicIds).sort()};
 }
 function invalidateMatchViews() {
+  if (!targetChosenByUser) initialRecommendationChosen = false;
   peopleMatchesRequest += 1;
   peopleMatchesKey = "";
   conversationResults.clear();
@@ -740,6 +743,8 @@ function graphNodeClass(item, isCenter) {
   return "graph-node graph-node-other";
 }
 async function activateGraphNode(personId) {
+  targetChosenByUser = true;
+  initialRecommendationChosen = true;
   const select = $("graph-focus");
   if (Array.from(select.options).some(option => option.value === personId)) select.value = personId;
   await loadConferenceGraph({focus: personId, query: $("graph-search").value.trim(), returnFocus: true});
@@ -753,8 +758,10 @@ function graphSourceId() {
   return $("graph-public-comparison").checked ? $("try-source").value : "";
 }
 function graphSourceChanged() {
+  targetChosenByUser = false;
+  initialRecommendationChosen = false;
   if (conferenceGraph) {
-    loadConferenceGraph({focus: conferenceGraph.center_id, query: $("graph-search").value.trim()});
+    loadConferenceGraph({focus: graphSourceId() || conferenceGraph.center_id, query: $("graph-search").value.trim()});
   } else if (new URLSearchParams(window.location.search).has("conference")) {
     loadConferenceGraph({query: $("graph-search").value.trim()});
   }
@@ -1053,7 +1060,8 @@ async function loadPeopleMatches() {
         list.append(card);
       }
     }
-    if (!initialRecommendationChosen && profileTopicContext?.profile_session && items.length && $("graph-my-profile").value.startsWith("self:")) {
+    if (!initialRecommendationChosen && !targetChosenByUser && items.length
+        && (source || (profileTopicContext?.profile_session && $("graph-my-profile").value.startsWith("self:")))) {
       initialRecommendationChosen = true;
       const recommended = items.find(item => item.category === "missing_piece") || items.find(item => item.category === "mirror") || items[0];
       if (conferenceGraph?.center_id !== recommended.id) {
@@ -1063,6 +1071,7 @@ async function loadPeopleMatches() {
     }
     if (conferenceGraph && conversationResults.has(conversationKey(conferenceGraph.center_id))) renderGraphDetail(conferenceGraph.center_id);
     const unknown = Number.isInteger(data.unclassified_count) ? data.unclassified_count : 0;
+    $("people-matches-title").textContent = source ? `People relevant to ${conferenceRoster[source]?.name || names[source] || "the selected profile"}` : "People relevant to you.";
     $("people-matches-status").textContent = items.length
       ? `${items.length} suggestions across the conference${unknown ? ` · ${unknown} people need more context` : ""}. Topic-based suggestions are starting points, not friendship predictions.`
       : "Choose interests or a starting profile to find mirrors, complements, and adjacent expertise.";
@@ -1242,8 +1251,18 @@ function selectionChanged() {
   $("try-status").textContent = "Choose two distinct public profiles, then search.";
   controls();
 }
-$("try-source").onchange = () => { selectionChanged(); graphSourceChanged(); };
-$("try-target").onchange = selectionChanged;
+$("try-source").onchange = () => {
+  $("graph-my-profile").value = $("try-source").value;
+  $("graph-public-comparison").checked = Boolean($("try-source").value);
+  selectionChanged();
+  targetChosenByUser = false;
+  invalidateMatchViews();
+  graphSourceChanged();
+};
+$("try-target").onchange = () => {
+  selectionChanged();
+  if (conferenceRoster[$("try-target").value]) activateGraphNode($("try-target").value);
+};
 $("try-source-filter").oninput = () => {
   const previous = $("try-source").value;
   populateSelect("try-source", "try-source-filter");
@@ -1267,20 +1286,23 @@ async function init() {
   } catch (error) { $("try-status").textContent = error.message; }
   controls();
 }
-$("graph-search-button").onclick = () => loadConferenceGraph({
-  focus: $("graph-focus").value || conferenceGraph?.center_id,
-  query: $("graph-search").value.trim(),
-});
+$("graph-search-button").onclick = () => {
+  targetChosenByUser = true;
+  initialRecommendationChosen = true;
+  loadConferenceGraph({focus: $("graph-focus").value || conferenceGraph?.center_id,
+    query: $("graph-search").value.trim()});
+};
 $("graph-search").onkeydown = event => {
   if (event.key === "Enter") {
     event.preventDefault();
     $("graph-search-button").click();
   }
 };
-$("graph-focus").onchange = () => loadConferenceGraph({
-  focus: $("graph-focus").value,
-  query: $("graph-search").value.trim(),
-});
+$("graph-focus").onchange = () => {
+  targetChosenByUser = true;
+  initialRecommendationChosen = true;
+  loadConferenceGraph({focus: $("graph-focus").value, query: $("graph-search").value.trim()});
+};
 $("graph-public-comparison").onchange = () => {
   $("graph-my-profile").value = "";
   invalidateMatchViews();
