@@ -9,7 +9,8 @@ _NODES = {
     "talks": ("Talk", ("id", "title", "conference", "starts", "room")),
     "topics": ("Topic", ("id", "name")),
     "repos": ("Repo", ("id", "full_name")),
-    "companies": ("Company", ("id", "name", "needs")),
+    "companies": ("Company", ("id", "name", "needs", "sectors", "topics")),
+    "interests": ("Interest", ("id", "name")),
     "funds": ("Fund", ("id", "name", "stages", "sectors")),
     "startups": ("Startup", ("id", "name", "stage", "sectors", "product_category", "seeking")),
 }
@@ -19,6 +20,7 @@ _FACTS = {
     "MAINTAINS": ("Person", "Repo"), "COAUTHORED": ("Person", "Person"),
     "WORKS_AT": ("Person", "Company"), "PARTNER_AT": ("Person", "Fund"),
     "FOUNDED": ("Person", "Startup"),
+    "INVESTED_IN": ("Fund", "Company"), "ENJOYS": ("Person", "Interest"),
 }
 _EVIDENCE_FIELDS = ("id", "url", "claim", "observed_at", "visibility")
 _CATEGORIES = ("colleague", "coauthor", "friend", "met")
@@ -72,6 +74,8 @@ def load_seed(store, seed: dict) -> dict:
     for fact in seed.get("edges", []):
         if fact["type"] not in _FACTS:
             raise ValueError("Unknown public fact type")
+        if fact["type"] in ("INVESTED_IN", "ENJOYS") and _evidence_id(fact) not in evidence:
+            raise ValueError("Hook facts require evidence")
     for owner, section in private.items():
         if owner not in people or not people[owner].get("consented"):
             raise ValueError("Private graph owner must be a consenting public person")
@@ -119,8 +123,17 @@ def load_seed(store, seed: dict) -> dict:
         for startup in seed.get("startups", []):
             for founder in startup.get("founders", []):
                 fact("FOUNDED", founder, startup["id"], _evidence_id(startup))
+        for company in seed.get("companies", []):
+            for topic in company.get("topics", []):
+                _edge(store, event, "ABOUT", "Company", company["id"], "Topic", topic)
         for item in seed.get("edges", []):
-            props = {"role": item["role"]} if "role" in item else {}
+            if item["type"] in ("INVESTED_IN", "ENJOYS"):
+                source = evidence[_evidence_id(item)]
+                if (_evidence_id(item) not in public_evidence or source.get("visibility") != "public"
+                        or not isinstance(source.get("url"), str) or not source["url"].strip()
+                        or not isinstance(source.get("claim"), str) or not source["claim"].strip()):
+                    continue
+            props = {key: item[key] for key in ("role", "round", "lead") if key in item}
             fact(item["type"], item["from"], item["to"], _evidence_id(item), props)
 
         private_nodes = private_edges = 0

@@ -115,9 +115,11 @@ def _move(decision, criteria, min_confidence):
     return {"choice": choice, "confidence": confidence}
 
 
-def suggested_move(store, request_id):
+def suggested_move(store, request_id, include_own=False):
     """Read validated opener and action choices stored separately from the fit result."""
     request = get_request(store, request_id)
+    if request.get("own_derived", False) and not include_own:
+        return {"cue_type": None, "next_action": None}
     return {key: _move({"choice": request.get(key),
                         "confidence": request.get(key + "_confidence")}, criteria, 0)
             for key, criteria in (("cue_type", _CUE_CRITERIA), ("next_action", _ACTION_CRITERIA))}
@@ -200,7 +202,7 @@ def score_fit(store, request_id, jev, min_confidence=0.6, include_own=False):
             result.update(abstained=False, reason=None, band=fit["choice"],
                           value=round((weights[0] + 0.5 * weights[1]) / total, 2))
     # Null removes prior choices when this call has no valid answer for them.
-    params = {"id": request_id}
+    params = {"id": request_id, "own_derived": bool(include_own)}
     for key, move in moves.items():
         params[key] = move["choice"] if move else None
         params[key + "_confidence"] = move["confidence"] if move else None
@@ -208,7 +210,8 @@ def score_fit(store, request_id, jev, min_confidence=0.6, include_own=False):
         store.query(store.event(),
                     "MATCH (r:Request {id: $id}) "
                     "SET r.cue_type = $cue_type, r.cue_type_confidence = $cue_type_confidence, "
-                    "r.next_action = $next_action, r.next_action_confidence = $next_action_confidence",
+                    "r.next_action = $next_action, r.next_action_confidence = $next_action_confidence, "
+                    "r.own_derived = $own_derived",
                     params)
     log(store, request_id, "scorer", "fit_scored")
     return result

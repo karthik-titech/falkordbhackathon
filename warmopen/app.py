@@ -177,7 +177,7 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
             if action == "score":
                 include_own = own_allowed(store, get_request(store, rid), token, recording)
                 result = score_fit(store, rid, jev, include_own=include_own)
-                result["move"] = suggested_move(store, rid)
+                result["move"] = suggested_move(store, rid, include_own=include_own)
                 view = _request_view(store, rid, token, recording)
                 routes = view["routes"] + ([view["revealed_route"]] if view["revealed_route"] else [])
                 return _presentation(store, result, routes, result["supports"])

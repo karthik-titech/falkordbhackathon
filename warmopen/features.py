@@ -5,6 +5,56 @@ from .paths import public_paths
 from .requests import get_request
 
 
+def _hook_evidence(item):
+    return (item.get("visibility") == "public"
+            and isinstance(item.get("url"), str) and bool(item["url"].strip())
+            and isinstance(item.get("claim"), str) and bool(item["claim"].strip()))
+
+
+def _portfolio_hooks(store, request):
+    """Read public investment evidence and the company's conference speakers."""
+    rows = store.query(
+        store.event(),
+        "MATCH (:Person {id: $target})-[:PARTNER_AT]->(:Fund)"
+        "-[r:INVESTED_IN]->(c:Company), (e:Evidence) "
+        "WHERE e.id = r.evidence_id AND e.visibility = 'public' "
+        "RETURN properties(c), properties(e) ORDER BY c.id, e.id",
+        {"target": request["target"]},
+    ).result_set
+    hooks = []
+    for company, evidence in rows:
+        if not _hook_evidence(evidence):
+            continue
+        members = store.query(
+            store.event(),
+            "MATCH (p:Person)-[:WORKS_AT]->(:Company {id: $company}) "
+            "OPTIONAL MATCH (p)-[:SPEAKS_AT]->(t:Talk) "
+            "WITH p, t WHERE p.kind = 'speaker' OR t IS NOT NULL "
+            "RETURN DISTINCT p.name, t.conference ORDER BY p.name, t.conference",
+            {"company": company["id"]},
+        ).result_set
+        topics = store.query(
+            store.event(),
+            "MATCH (:Company {id: $company})-[:ABOUT]->(t:Topic) RETURN t.id, t.name",
+            {"company": company["id"]},
+        ).result_set
+        hooks.append({"company": company, "evidence": evidence, "members": members,
+                      "topics": {value for row in topics for value in row if value}})
+    return hooks
+
+
+def _interest_hooks(store, request):
+    rows = store.query(
+        store.event(),
+        "MATCH (:Person {id: $target})-[r:ENJOYS]->(i:Interest), (e:Evidence) "
+        "WHERE e.id = r.evidence_id AND e.visibility = 'public' "
+        "RETURN properties(i), properties(e) ORDER BY e.observed_at DESC, i.id, e.id",
+        {"target": request["target"]},
+    ).result_set
+    return [{"interest": interest, "evidence": evidence} for interest, evidence in rows
+            if _hook_evidence(evidence)]
+
+
 def _public_evidence(store, request, routes):
     # Route edges take priority. Never include evidence from a revealed route.
     ids = [edge["evidence_id"] for route in routes for edge in route["edges"]
@@ -116,6 +166,7 @@ def extract_features(store, request_id, include_own=False):
     if revealed:
         routes.append({"route_id": revealed["route_id"], "hops": revealed["hops"],
                        "min_tie": min_tie, "kind": "revealed"})
+    portfolio = _portfolio_hooks(store, request)
     features = {
         "goal": request["goal"], "public_route_count": len(public),
         "best_public_hops": min((r["hops"] for r in public), default=None),
@@ -129,6 +180,9 @@ def extract_features(store, request_id, include_own=False):
                                    _topics(store, request["target"])),
         "seeking_overlap_count": len(seeking & spoken_topics),
         "met_before": met_before,
+        "has_portfolio_news": bool(portfolio),
+        "team_member_present": any(hook["members"] for hook in portfolio),
+        "has_stated_interest": bool(_interest_hooks(store, request)),
         "stage_match": stage_match, "sector_overlap_count": sector_overlap,
         "category_match": category_match,
         "evidence_count": len(_public_evidence(store, request, public)),
