@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Warm Open</title>
+  <title>Name to come</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/brand.js"></script>
   <script src="/static/app.js" defer></script>
 </head>
-<body>
+<body class="split-demo">
   <div id="mode-banner" role="status" hidden>Recorded run</div>
-  <header><p id="kicker">◆ 01 · FIND</p><div class="header-meta"><p>WARM OPEN · FALKORDB <span id="step-counter">01 / 05</span></p><a href="/owner" target="_blank" rel="noopener">Owner approvals</a></div></header>
+  <div class="demo-layout">
+  <div id="requester-view">
+  <header><p id="kicker">◆ 01 · FIND</p><div class="header-meta"><p><span id="product-name"></span> <span id="step-counter">01 / 05</span></p><a href="/owner" target="_blank" rel="noopener">Owner approvals</a></div></header>
   <main>
     <div class="slide-heading"><h1 id="headline">Find your next conversation.</h1><p id="headline-detail" hidden></p><p id="subline">Choose a speaker and a goal.</p></div>
     <form id="find-form" class="panel pickers">
@@ -52,5 +55,18 @@
       <li data-step="open"><span class="step-marker" aria-hidden="true">□</span><span>05 OPEN</span></li>
     </ol>
   </main>
+  </div>
+  <aside id="owner-panel" aria-label="Owner's phone: approvals">
+    <h2>OWNER'S PHONE</h2>
+    <p>Choose what the requester can see.</p>
+    <form id="panel-form">
+      <label>Owner<select id="panel-owner" required></select></label>
+      <label>Owner token<input id="panel-token" type="password" autocomplete="off" required></label>
+      <button id="panel-open" type="submit" disabled>Open approvals</button>
+    </form>
+    <p id="panel-status" class="claim" role="status" aria-live="polite">Choose an owner and enter their token.</p>
+    <ul id="panel-pending" aria-label="Pending owner requests"></ul>
+  </aside>
+  </div>
 </body>
 </html>

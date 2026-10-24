@@ -99,6 +99,29 @@ label { display: grid; gap: 8px; min-width: 0; color: var(--ink); line-height: 1
 .step-marker { position: relative; background: var(--paper); width: 14px; font-size: 16px; line-height: 16px; letter-spacing: 0; }
 #step-track .done { color: var(--ink); }
 #step-track [aria-current="step"] { color: var(--olive); font-weight: 800; }
+.split-demo { padding-bottom: 0; }
+.demo-layout { display: grid; grid-template-columns: minmax(0, 68fr) minmax(0, 32fr); max-width: 1280px; margin: auto; }
+#requester-view { min-width: 0; padding-bottom: 96px; border-right: 1px solid var(--rule); }
+#requester-view header, #requester-view main { padding-left: 32px; padding-right: 32px; }
+#requester-view .pickers, #requester-view .meeting-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#requester-view .workspace { grid-template-columns: minmax(0, 1fr); }
+#requester-view .timeline-panel { margin-top: 24px; }
+#requester-view #step-track { left: max(32px, calc((100vw - 1280px) / 2 + 32px)); right: auto; width: calc(min(100vw, 1280px) * .68 - 64px); }
+#owner-panel { min-width: 0; align-self: start; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow: auto; margin: 36px 24px; padding: 24px; border: 1px solid var(--ink); border-radius: 16px; overflow-wrap: anywhere; }
+#owner-panel > h2 { color: var(--olive); }
+#owner-panel > p { font-size: 16px; }
+#panel-form { display: grid; gap: 20px; }
+#panel-pending { list-style: none; padding: 0; margin: 24px 0 0; }
+#panel-pending > li { border-top: 1px solid var(--rule); padding: 20px 0; }
+#panel-pending h3 { border: 0; padding: 0; font-family: inherit; font-size: 22px; font-weight: 800; text-transform: none; letter-spacing: -0.03em; }
+#panel-pending .actions { flex-direction: column; }
+#owner-panel button { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 899px) {
+  .demo-layout { grid-template-columns: minmax(0, 1fr); }
+  #requester-view { padding-bottom: 0; border-right: 0; }
+  #requester-view #step-track { position: static; width: auto; margin-top: 32px; }
+  #owner-panel { position: static; max-height: none; margin: 0 32px 32px; }
+}
 @media (max-width: 1000px) {
   header, main { padding-left: 28px; padding-right: 28px; }
   .pickers, .meeting-row { grid-template-columns: 1fr 1fr; }
@@ -119,6 +142,9 @@ label { display: grid; gap: 8px; min-width: 0; color: var(--ink); line-height: 1
   #step-track { left: 16px; right: 16px; font-size: 10px; letter-spacing: 0.04em; }
   .metric { font-size: 28px; }
   #pending .actions { flex-direction: column; }
+  #requester-view header, #requester-view main { padding-left: 16px; padding-right: 16px; }
+  #requester-view .pickers, #requester-view .meeting-row { grid-template-columns: minmax(0, 1fr); }
+  #owner-panel { margin: 0 16px 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .route-span.draw-in { animation: none; stroke-dashoffset: 0; }

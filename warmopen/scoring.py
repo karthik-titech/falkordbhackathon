@@ -34,6 +34,22 @@ _INTRODUCER_CRITERIA = {
     "APPROACH_DIRECTLY": "Approach directly when no warm route is available.",
     "INSUFFICIENT_EVIDENCE": "Abstain when the abstract facts do not support a route decision.",
 }
+_CUE_CRITERIA = {
+    "shared_interest": "Open with shared interests when topic_overlap_count supports them.",
+    "capability": "Ask about the target's approach when seeking_overlap_count supports a relevant capability.",
+    "problem": "Ask which problem the target is focused on when the abstract fit facts support discovery.",
+    "previous_conversation": "Ask what has changed since the previous conversation only when met_before is true.",
+    "portfolio_news": "Open with portfolio news only when abstract facts support that hook.",
+    "personal_interest": "Open with a stated personal interest only when abstract facts support that hook.",
+    "INSUFFICIENT_EVIDENCE": "Abstain when the abstract facts do not support an opener style.",
+}
+_ACTION_CRITERIA = {
+    "start_conversation": "Start a conversation when the fit and available evidence support an approach.",
+    "ask_discovery_question": "Ask a discovery question when relevant facts exist but fit gaps remain.",
+    "request_intro": "Request an introduction when a public or approved revealed warm route is available.",
+    "no_approach": "Do not approach when the abstract facts indicate low fit.",
+    "INSUFFICIENT_EVIDENCE": "Abstain when the abstract facts do not support a next action.",
+}
 _ABSTRACT_LABEL = re.compile(r"(?:invest|sales|public|revealed|public_\d+|revealed_\d+)\Z")
 
 
@@ -70,12 +86,41 @@ def build_payload(features, choices):
                 "instructions": "Select one available route, APPROACH_DIRECTLY, or INSUFFICIENT_EVIDENCE.",
                 "criteria": introducer_criteria,
             },
+            "cue_type": {
+                "type": "choice",
+                "instructions": "Choose an evidence-supported opener style from the abstract facts.",
+                "criteria": _CUE_CRITERIA.copy(),
+            },
+            "next_action": {
+                "type": "choice",
+                "instructions": "Choose the next action from the abstract fit, gaps and routes.",
+                "criteria": _ACTION_CRITERIA.copy(),
+            },
         },
     }
 
 
 def _finite_number(value):
     return type(value) in (int, float) and math.isfinite(value)
+
+
+def _move(decision, criteria, min_confidence):
+    if not isinstance(decision, dict):
+        return None
+    choice, confidence = decision.get("choice"), decision.get("confidence")
+    if (not isinstance(choice, str) or choice not in criteria
+            or choice == "INSUFFICIENT_EVIDENCE" or type(confidence) not in (int, float)
+            or not 0 <= confidence <= 1 or confidence < min_confidence):
+        return None
+    return {"choice": choice, "confidence": confidence}
+
+
+def suggested_move(store, request_id):
+    """Read validated opener and action choices stored separately from the fit result."""
+    request = get_request(store, request_id)
+    return {key: _move({"choice": request.get(key),
+                        "confidence": request.get(key + "_confidence")}, criteria, 0)
+            for key, criteria in (("cue_type", _CUE_CRITERIA), ("next_action", _ACTION_CRITERIA))}
 
 
 def _validate(answer):
@@ -134,12 +179,16 @@ def score_fit(store, request_id, jev, min_confidence=0.6, include_own=False):
     }
     choices = [route["route_id"] for route in features["routes"]]
     choices += ["APPROACH_DIRECTLY", "INSUFFICIENT_EVIDENCE"]
+    moves = {"cue_type": None, "next_action": None}
     try:
-        fit, intro, weights, total = _validate(jev(build_payload(features, choices)))
+        answer = jev(build_payload(features, choices))
+        fit, intro, weights, total = _validate(answer)
     except Exception:
         # Provider errors and malformed answers expose no provider text to callers.
         pass
     else:
+        for key, criteria in (("cue_type", _CUE_CRITERIA), ("next_action", _ACTION_CRITERIA)):
+            moves[key] = _move(answer["answers"].get(key), criteria, min_confidence)
         result["confidence"] = fit["confidence"]
         result["introducer"] = _introducer(store, request_id, request, intro["choice"],
                                            include_own=include_own)
@@ -150,5 +199,16 @@ def score_fit(store, request_id, jev, min_confidence=0.6, include_own=False):
         else:
             result.update(abstained=False, reason=None, band=fit["choice"],
                           value=round((weights[0] + 0.5 * weights[1]) / total, 2))
+    # Null removes prior choices when this call has no valid answer for them.
+    params = {"id": request_id}
+    for key, move in moves.items():
+        params[key] = move["choice"] if move else None
+        params[key + "_confidence"] = move["confidence"] if move else None
+    with store.lock:
+        store.query(store.event(),
+                    "MATCH (r:Request {id: $id}) "
+                    "SET r.cue_type = $cue_type, r.cue_type_confidence = $cue_type_confidence, "
+                    "r.next_action = $next_action, r.next_action_confidence = $next_action_confidence",
+                    params)
     log(store, request_id, "scorer", "fit_scored")
     return result

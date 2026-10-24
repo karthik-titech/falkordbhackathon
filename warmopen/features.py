@@ -69,6 +69,20 @@ def extract_features(store, request_id, include_own=False):
         "MATCH (:Person {id: $id})-[:FOUNDED]->(s:Startup) RETURN properties(s)",
         {"id": request["requester"]},
     ).result_set]
+    seeking = {topic for startup in startups for topic in startup.get("seeking", [])}
+    spoken_topics = {row[0] for row in store.query(
+        store.event(),
+        "MATCH (:Person {id: $id})-[:SPEAKS_AT]->(:Talk)-[:ABOUT]->(t:Topic) "
+        "RETURN t.id", {"id": request["target"]},
+    ).result_set}
+    met_before = False
+    if include_own and request.get("use_own_memory", False):
+        met_before = bool(store.query(
+            store.private(request["requester"]),
+            "MATCH (:Person {id: $requester})-[:KNOWS]->(:Person {id: $target}) "
+            "RETURN 1 LIMIT 1",
+            {"requester": request["requester"], "target": request["target"]},
+        ).result_set)
     stage_match = sector_overlap = category_match = None
     if request["goal"] == "invest":
         funds = [row[0] for row in store.query(
@@ -113,6 +127,8 @@ def extract_features(store, request_id, include_own=False):
         "coauthor_links": sum(kind == "coauthor" for kind, _ in links),
         "topic_overlap_count": len(_topics(store, request["requester"]) &
                                    _topics(store, request["target"])),
+        "seeking_overlap_count": len(seeking & spoken_topics),
+        "met_before": met_before,
         "stage_match": stage_match, "sector_overlap_count": sector_overlap,
         "category_match": category_match,
         "evidence_count": len(_public_evidence(store, request, public)),

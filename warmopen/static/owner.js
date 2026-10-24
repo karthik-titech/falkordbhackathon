@@ -1,5 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
+document.title = `Owner approvals · ${PRODUCT_NAME}`;
+$("product-name").textContent = `${PRODUCT_NAME} · FalkorDB`;
 let owner = new URLSearchParams(location.search).get("owner") || "", token = "", polling = false, active = false;
 $("owner-id").value = owner;
 function restore() {

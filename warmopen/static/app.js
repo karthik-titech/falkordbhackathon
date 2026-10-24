@@ -1,9 +1,12 @@
 "use strict";
 const $ = id => document.getElementById(id);
+document.title = PRODUCT_NAME;
+$("product-name").textContent = `${PRODUCT_NAME} · FalkorDB`;
 let people = [], targets = [], requestId = null, requestRequester = null, requestState = null, revealed = false;
 let names = {}, evidence = {}, polling = false, busy = false;
 let scored = false, opened = false, animatedRoute = null;
 const offers = new Map();
+let panelSession = null, panelRevision = 0, panelPolling = null;
 const CONFERENCE_NAMES = {
   aie_worldsfair_2026: "AI Engineer World's Fair 2026",
   github_universe_2026: "GitHub Universe 2026"
@@ -166,6 +169,87 @@ function ownersView() {
     $("owners").append(row);
   }
 }
+function resetPanel() {
+  panelSession = null; panelRevision++;
+  $("panel-pending").replaceChildren();
+  $("panel-open").disabled = !$("panel-owner").value || !$("panel-token").value;
+  $("panel-status").textContent = "Choose an owner and enter their token.";
+}
+function restorePanelToken() {
+  try { $("panel-token").value = sessionStorage.getItem(`warmopen-owner:${$("panel-owner").value}`) || ""; }
+  catch (_) { $("panel-token").value = ""; }
+  resetPanel();
+}
+function panelOwners(preferred) {
+  const previous = $("panel-owner").value;
+  const owners = people.filter(person => person.id !== $("requester").value);
+  $("panel-owner").replaceChildren(...owners.map(person => new Option(person.name, person.id)));
+  const selected = [panelSession ? previous : preferred, previous].find(id => owners.some(person => person.id === id));
+  if (selected) $("panel-owner").value = selected;
+  if (!panelSession && $("panel-owner").value !== previous) restorePanelToken();
+  $("panel-open").disabled = !$("panel-owner").value || !$("panel-token").value;
+}
+async function panelPending() {
+  const session = panelSession, revision = panelRevision;
+  if (!session || session.granting || panelPolling === revision) return;
+  panelPolling = revision;
+  try {
+    const data = await api(`/api/owner/${encodeURIComponent(session.owner)}/pending`, undefined, session.token);
+    if (panelSession !== session || panelRevision !== revision) return;
+    $("panel-pending").replaceChildren();
+    for (const item of data.items) {
+      const row = node("li");
+      row.append(node("h3", `${item.requester_name} → ${item.target_name}`),
+        node("p", item.goal === "invest" ? "Invest" : "Product sales proposal"));
+      const actions = node("div", undefined, "actions");
+      for (const [scope, label] of [["reachability", "Approve reachability"], ["reveal", "Approve reveal"]]) {
+        const approved = `${scope === "reveal" ? "Reveal" : "Reachability"} approved`;
+        const button = node("button", item[`${scope}_granted`] ? approved : label);
+        button.type = "button"; button.dataset.scope = scope;
+        button.disabled = item[`${scope}_granted`];
+        button.onclick = async () => {
+          if (panelSession !== session || session.granting || button.disabled) return;
+          session.granting = true; panelRevision++;
+          for (const control of $("panel-pending").querySelectorAll("button")) control.disabled = true;
+          try {
+            await api("/api/grants", {owner: session.owner, requester: item.requester,
+              request_id: item.request_id, scope}, session.token);
+            if (panelSession !== session) return;
+            button.textContent = approved;
+            $("status").textContent = "Owner approved. Press Ask owners again.";
+            session.notice = "Owner approved. Press Ask owners again.";
+          } catch (_) {
+            session.notice = "Approval failed. Check the owner token and try again.";
+          } finally {
+            session.granting = false;
+            if (panelSession === session) await panelPending();
+          }
+        };
+        actions.append(button);
+      }
+      row.append(actions); $("panel-pending").append(row);
+    }
+    $("panel-status").textContent = session.notice || (data.items.length ? "Grants expire after 15 minutes." : "No requests yet. Press Ask owners on the left.");
+  } catch (_) {
+    if (panelSession === session && panelRevision === revision) {
+      $("panel-pending").replaceChildren();
+      $("panel-status").textContent = "Cannot load approvals. Check the owner token and try again.";
+    }
+  } finally { if (panelPolling === revision) panelPolling = null; }
+}
+$("panel-owner").onchange = restorePanelToken;
+$("panel-token").oninput = resetPanel;
+$("panel-form").onsubmit = event => {
+  event.preventDefault(); resetPanel();
+  const owner = $("panel-owner").value, token = $("panel-token").value;
+  if (!owner || !token) return;
+  try { sessionStorage.setItem(`warmopen-owner:${owner}`, token); }
+  catch (_) { /* The token stays in this page's memory. */ }
+  panelSession = {owner, token, granting: false};
+  $("panel-status").textContent = "Loading approvals…";
+  panelPending();
+};
+setInterval(panelPending, 2000);
 async function refresh() {
   const rid = requestId;
   if (!rid) return;
@@ -199,9 +283,11 @@ function filterMeetings() {
 function tokenKey() { return `warmopen:requester-token:${$("requester").value}`; }
 function requesterToken() { return sessionStorage.getItem(`warmopen:requester-token:${requestRequester}`) || ""; }
 function selectRequester() {
+  resetPanel();
   $("requester-token").value = sessionStorage.getItem(tokenKey()) || "";
   $("meeting-status").textContent = "";
   filterMeetings();
+  panelOwners();
 }
 $("requester-token").oninput = () => {
   if ($("requester-token").value) sessionStorage.setItem(tokenKey(), $("requester-token").value);
@@ -243,6 +329,7 @@ $("ask").onclick = () => action(async () => {
     offers.set(person.id, await api(`/api/requests/${requestId}/reachability`, {owner: person.id}));
     ownersView();
   }
+  panelOwners([...offers].find(([, answer]) => ["no_consent", "reachable"].includes(answer.status))?.[0]);
   await refresh(); $("status").textContent = "Owners asked. After approval, press Ask owners again.";
 });
 $("score").onclick = () => action(async () => {
@@ -257,6 +344,11 @@ $("score").onclick = () => action(async () => {
   if (!fit.abstained) card.append(node("p", `Confidence: ${fit.confidence ?? "unavailable"}`));
   const via = fit.introducer?.via;
   card.append(node("p", `Introducer: ${via ? (names[via] || via) : (fit.introducer?.route_id || "unavailable")}`));
+  for (const [key, title] of [["next_action", "Suggested move"], ["cue_type", "Opener style"]]) {
+    const move = fit.move?.[key];
+    card.append(node("p", move ? `${title}: ${move.choice.replaceAll("_", " ")} · Confidence: ${move.confidence}` :
+      (key === "next_action" ? "No suggested move" : "Opener style: unavailable")));
+  }
   const reasons = node("div", undefined, "fit-reasons");
   for (const [key, title, marker] of [["supports", "Supports", "■"], ["against", "Against", "◩"], ["would_improve", "Would improve", "□"]]) {
     const column = node("section", undefined, key), heading = node("h3");

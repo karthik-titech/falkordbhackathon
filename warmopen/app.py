@@ -95,7 +95,7 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
     from .errors import NotFound
     from .openers import generate_openers
     from .requests import _advance_locked, create_request, get_request
-    from .scoring import score_fit
+    from .scoring import score_fit, suggested_move
 
     if body is not None and not isinstance(body, dict):
         raise ValueError("JSON body must be an object")
@@ -177,6 +177,7 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
             if action == "score":
                 include_own = own_allowed(store, get_request(store, rid), token, recording)
                 result = score_fit(store, rid, jev, include_own=include_own)
+                result["move"] = suggested_move(store, rid)
                 view = _request_view(store, rid, token, recording)
                 routes = view["routes"] + ([view["revealed_route"]] if view["revealed_route"] else [])
                 return _presentation(store, result, routes, result["supports"])

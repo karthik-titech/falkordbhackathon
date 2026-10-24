@@ -11,7 +11,7 @@ _NODES = {
     "repos": ("Repo", ("id", "full_name")),
     "companies": ("Company", ("id", "name", "needs")),
     "funds": ("Fund", ("id", "name", "stages", "sectors")),
-    "startups": ("Startup", ("id", "name", "stage", "sectors", "product_category")),
+    "startups": ("Startup", ("id", "name", "stage", "sectors", "product_category", "seeking")),
 }
 _FACTS = {
     "SPEAKS_AT": ("Person", "Talk"), "ABOUT": ("Talk", "Topic"),
