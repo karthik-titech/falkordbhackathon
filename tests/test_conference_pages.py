@@ -25,12 +25,25 @@ def test_conference_flow_pages_are_local_and_keep_old_explorer_at_explore():
     assert "fetch(" not in try_html
 
 
-def test_profile_links_stay_in_session_storage_and_are_not_looked_up_or_matched():
+def test_profile_research_requires_explicit_consent_and_continue_action():
     start_js = (STATIC / "start.js").read_text(encoding="utf-8")
-    assert "JSON.stringify({linkedin: linkedin.value, x: x.value})" in start_js
-    assert "fetch(linkedin" not in start_js and "fetch(x" not in start_js
-    assert 'method: "POST"' not in start_js and "headers:" not in start_js
-    assert "Profile lookup is not connected yet." in start_js
+    start_html = (STATIC / "start.html").read_text(encoding="utf-8")
+    assert 'id="profile-consent" type="checkbox"' in start_html
+    assert 'id="continue-button" type="button" class="primary-button">Find my interests' in start_html
+    assert 'Use my public profile to suggest conference interests' in start_html
+    assert 'fetch("/api/profile/enrich"' in start_js
+    assert 'method: "POST"' in start_js and 'consent: true' in start_js
+    assert 'if (!$("profile-consent").checked)' in start_js
+    assert 'if (enrichmentFinished) { goToExplore(); return; }' in start_js
+    assert 'const body = {conference_id: conferenceId, consent: true};' in start_js
+    assert 'if (links.linkedin) body.linkedin = links.linkedin;' in start_js
+    assert 'if (links.x) body.x = links.x;' in start_js
+    assert "window.location.assign(`/explore?conference=" in start_js
+    assert 'fetch("/api/profile/enrich"' not in (STATIC / "try.js").read_text(encoding="utf-8")
+    assert "We look up your links only after you opt in and choose Find my interests." in start_html
+    assert 'sessionStorage.setItem(PROFILE_CONTEXT_KEY' in start_js
+    assert 'seeking_topic_ids: []' in start_js
+    assert "Profile research could not be completed yet." in start_js
     assert "window.location.assign(`/explore?conference=" in start_js
     assert "No confirmed attendee list imported yet." in (STATIC / "conferences.js").read_text(encoding="utf-8")
-    assert "profile-linkedin" in (STATIC / "start.html").read_text(encoding="utf-8")
+    assert "profile-linkedin" in start_html

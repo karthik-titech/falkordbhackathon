@@ -14,6 +14,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 _STATIC = Path(__file__).with_name("static")
 _REQUEST = re.compile(r"/api/requests/([^/]+)(?:/([^/]+))?\Z")
 _CONFERENCE_PEOPLE = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/people\Z")
+_CONFERENCE_GRAPH = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/graph\Z")
+_CONFERENCE_TOPICS = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/topics\Z")
+_CONFERENCE_CONVERSATION = re.compile(r"/api/conferences/([A-Za-z0-9_.-]+)/conversation\Z")
 
 
 def _reject_constant(value):
@@ -90,7 +93,8 @@ def _request_view(store, request_id, token=None, recording=None):
                          routes + ([revealed] if revealed else []))
 
 
-def _live(store, method, path, body, token, jev, llm, recording=None):
+def _live(store, method, path, body, token, jev, llm, recording=None,
+          brightdata=None, profile_client=None, mentions=None):
     from . import broker, consent
     from .agentlog import _log_locked
     from .errors import NotFound
@@ -142,6 +146,13 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
         items = list_conferences(store)
         citations = [{"evidence_id": eid} for item in items for eid in item.get("evidence_ids", [])]
         return _presentation(store, {"items": items}, citations=citations)
+    if method == "GET" and _CONFERENCE_TOPICS.fullmatch(path):
+        from .conversation import conference_topics
+
+        conference_id = _CONFERENCE_TOPICS.fullmatch(path)[1]
+        items = conference_topics(store, conference_id)
+        citations = [{"evidence_id": eid} for item in items for eid in item["evidence_ids"]]
+        return _presentation(store, {"items": items}, citations=citations)
     if method == "GET" and _CONFERENCE_PEOPLE.fullmatch(path):
         from .directory import conference_people
 
@@ -151,6 +162,67 @@ def _live(store, method, path, body, token, jev, llm, recording=None):
                      for collection in ("confirmed_attendees", "scheduled_speakers")
                      for person in result[collection] for eid in person.get("evidence_ids", [])]
         return _presentation(store, result, citations=citations)
+    if method == "POST" and _CONFERENCE_GRAPH.fullmatch(path):
+        from .proximity import DEFAULT_LIMIT, conference_graph
+
+        if set(body) - {"focus", "query", "limit", "source", "interest_topic_ids", "seeking_topic_ids"}:
+            raise ValueError("Unexpected conference graph fields")
+        for key in ("interest_topic_ids", "seeking_topic_ids"):
+            if key in body and not isinstance(body[key], list):
+                raise ValueError(f"{key} must be a topic id list")
+        conference_id = _CONFERENCE_GRAPH.fullmatch(path)[1]
+        focus = body.get("focus")
+        query = body.get("query", "")
+        limit = body.get("limit", DEFAULT_LIMIT)
+        result = conference_graph(store, conference_id, focus=focus, query=query, limit=limit,
+                                  source=body.get("source"),
+                                  interest_topic_ids=body.get("interest_topic_ids"),
+                                  seeking_topic_ids=body.get("seeking_topic_ids"))
+        citations = [{"evidence_id": evidence_id}
+                     for edge in result["edges"] for evidence_id in edge["evidence_ids"]]
+        citations.extend({"evidence_id": evidence_id}
+                         for node in result["nodes"]
+                         for evidence_id in node.get("context_evidence_ids", []))
+        return _presentation(store, result, citations=citations)
+    if method == "POST" and _CONFERENCE_CONVERSATION.fullmatch(path):
+        from .conversation import assess_conversation
+
+        allowed = {"source", "target", "refresh", "interest_topic_ids", "seeking_topic_ids"}
+        if set(body) - allowed or "target" not in body:
+            raise ValueError("Expected target and optional conversation fields")
+        target = fields("target")[0]
+        source = body.get("source")
+        if source is not None and (not isinstance(source, str) or not source.strip()):
+            raise ValueError("Invalid public comparison profile")
+        refresh = body.get("refresh", False)
+        if type(refresh) is not bool:
+            raise ValueError("refresh must be a boolean")
+        for key in ("interest_topic_ids", "seeking_topic_ids"):
+            if key in body and not isinstance(body[key], list):
+                raise ValueError(f"{key} must be a topic id list")
+        conference_id = _CONFERENCE_CONVERSATION.fullmatch(path)[1]
+        result = assess_conversation(store, conference_id, source, target, jev=jev,
+                                     brightdata=brightdata, mentions=mentions, refresh=refresh,
+                                     interest_topic_ids=body.get("interest_topic_ids"),
+                                     seeking_topic_ids=body.get("seeking_topic_ids"))
+        citations = [{"evidence_id": eid} for eid in result.get("evidence_ids", [])]
+        return _presentation(store, result, citations=citations)
+    if method == "POST" and path == "/api/profile/enrich":
+        from .profiles import enrich_profile
+
+        if set(body) - {"conference_id", "linkedin", "x", "consent"}:
+            raise ValueError("Unexpected profile enrichment fields")
+        conference_id = body.get("conference_id")
+        linkedin, x = body.get("linkedin"), body.get("x")
+        consented = body.get("consent")
+        if not isinstance(conference_id, str) or not conference_id.strip() or consented is not True:
+            raise ValueError("Explicit profile enrichment consent is required")
+        if linkedin is not None and not isinstance(linkedin, str):
+            raise ValueError("Invalid LinkedIn profile URL")
+        if x is not None and not isinstance(x, str):
+            raise ValueError("Invalid X profile URL")
+        return enrich_profile(store, conference_id, linkedin=linkedin, x=x,
+                              consent=consented, client=profile_client)
     if method == "POST" and path == "/api/try":
         from .tryflow import explore_public
 
@@ -305,7 +377,8 @@ class _Replay:
 
 
 def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None,
-                record_dir=None, recordings_dir=None, public_landing=False) -> ThreadingHTTPServer:
+                record_dir=None, recordings_dir=None, public_landing=False,
+                brightdata=None, profile_client=None, mentions=None) -> ThreadingHTTPServer:
     """Build a server without starting its loop; replay never consults the store."""
     if mode not in ("live", "recorded"):
         raise ValueError("Unknown server mode")
@@ -338,7 +411,8 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
         def _api(self, path):
             nonlocal counter
             body = None
-            recording = {} if directory else None
+            record_this_call = directory is not None and path != "/api/profile/enrich"
+            recording = {} if record_this_call else None
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if length < 0 or length > 1_048_576:
@@ -357,7 +431,8 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
                     context = _auth_recording.set(recording)
                     try:
                         result = _live(store, self.command, self.path if path == "/api/meet" else path, body,
-                                       self.headers.get("X-Owner-Token"), jev, llm, recording)
+                                       self.headers.get("X-Owner-Token"), jev, llm, recording,
+                                       brightdata, profile_client, mentions)
                     finally:
                         _auth_recording.reset(context)
                     status = 200
@@ -380,7 +455,7 @@ def make_server(store, host="127.0.0.1", port=0, mode="live", jev=None, llm=None
                     result["error"] = result["error"].replace(token, "[redacted]")
             result["mode"] = mode
             data = json.dumps(result, allow_nan=False).encode("utf-8")
-            if directory:
+            if record_this_call:
                 record = {"method": self.command, "path": self.path,
                           "request_body": body, "status": status, "body": result, **recording}
                 # Serialize delivery so recording counters match response order.

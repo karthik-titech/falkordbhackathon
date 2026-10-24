@@ -18,9 +18,9 @@
     <h1 id="start-title">A useful next step.</h1>
     <p id="start-dates" class="quiet-copy"></p>
     <section class="profile-card">
-      <p class="eyebrow">OPTIONAL · THIS BROWSER SESSION ONLY</p>
-      <h2>Add your profile links</h2>
-      <p class="quiet-copy">Links stay in this browser session. We do not look them up or match them to conference profiles yet.</p>
+      <p class="eyebrow">OPTIONAL · PERSONALIZE THIS BROWSER SESSION</p>
+      <h2>Add public profile links</h2>
+      <p class="quiet-copy">Add links to find conference topics that match your public work. You choose whether to look them up.</p>
       <div id="profile-form">
         <label for="profile-linkedin">LinkedIn profile URL</label>
         <input id="profile-linkedin" type="url" inputmode="url" autocomplete="url" aria-describedby="linkedin-error" placeholder="https://www.linkedin.com/in/your-name">
@@ -28,12 +28,15 @@
         <label for="profile-x">X or Twitter profile URL</label>
         <input id="profile-x" type="url" inputmode="url" autocomplete="url" aria-describedby="x-error" placeholder="https://x.com/yourname">
         <p id="x-error" class="field-error" aria-live="polite"></p>
+        <label class="profile-consent"><input id="profile-consent" type="checkbox"> Use my public profile to suggest conference interests</label>
+        <p class="quiet-copy profile-consent-copy">We look up your links only after you opt in and choose Find my interests. They do not identify you in the conference graph.</p>
         <div class="profile-actions">
-          <button id="continue-button" type="button" class="primary-button">Continue to attendee discovery</button>
-          <a id="skip-button" class="secondary-link" href="#">Skip profile links and explore</a>
-          <button id="clear-button" type="button" class="text-button">Clear saved links</button>
+          <button id="continue-button" type="button" class="primary-button">Find my interests</button>
+          <a id="skip-button" class="secondary-link" href="#">Skip profile research and explore</a>
+          <button id="clear-button" type="button" class="text-button">Clear saved links and topics</button>
         </div>
       </div>
+      <div id="profile-enrichment-result" class="profile-enrichment-result" hidden></div>
       <p id="profile-status" class="quiet-copy" role="status" aria-live="polite"></p>
     </section>
     <p class="start-footnote">Public attendee and speaker lists remain separate. A speaker listing does not confirm attendance.</p>

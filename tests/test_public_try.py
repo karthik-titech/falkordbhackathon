@@ -94,9 +94,12 @@ def test_public_try_page_is_separate_and_uses_safe_dom_rendering():
     static = Path(__file__).resolve().parents[1] / "warmopen" / "static"
     html = (static / "try.html").read_text(encoding="utf-8")
     js = (static / "try.js").read_text(encoding="utf-8")
-    assert "does not sign you in" in html
+    assert "Explore public profile connections" in html
     assert "does not" in html and "physical presence" in html
     assert "innerHTML" not in js
-    for secret_control in ("requester-token", "X-Owner-Token", "sessionStorage", "localStorage"):
+    for secret_control in ("requester-token", "X-Owner-Token", "localStorage"):
         assert secret_control not in js
+    for private_profile_input in ("warmopen_profile_links", "profile-linkedin", "profile-x"):
+        assert private_profile_input not in js
+    assert 'fetch("/api/profile/enrich"' not in js
     assert "Explore public connections" in (static / "index.html").read_text(encoding="utf-8")

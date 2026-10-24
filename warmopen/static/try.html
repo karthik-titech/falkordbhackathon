@@ -12,42 +12,92 @@
 <body class="public-try explore-page">
   <header>
     <p id="try-kicker">PUBLIC GRAPH EXPLORATION</p>
-    <div class="header-meta"><p><span id="try-product-name"></span></p><a href="/workspace">Introduction workspace</a></div>
+    <div class="header-meta"><p><span id="try-product-name"></span></p><a href="/try">Conference directory</a></div>
   </header>
   <main>
-    <section id="conference-context" class="conference-context" hidden aria-live="polite">
+    <section id="conference-context" class="conference-context" hidden>
       <a href="/try" class="quiet-link">← Conference directory</a>
       <h1 id="explore-conference-title"></h1>
       <p id="explore-conference-dates" class="quiet-copy"></p>
-      <div class="directory-people-grid">
-        <section><h2>Confirmed attendees</h2><div id="explore-attendees"></div></section>
-        <section><h2>Scheduled speakers</h2><div id="explore-speakers"></div></section>
-      </div>
-      <p class="quiet-copy">Scheduled speakers are not confirmed attendees. Public profile links entered on the previous page are not looked up or matched.</p>
-    </section>
-    <div class="slide-heading">
-      <h1>Explore public connections.</h1>
-      <p id="try-subline">Choose two public profiles to inspect cited graph paths.</p>
-    </div>
-    <section class="panel try-panel" aria-labelledby="try-heading">
-      <h2 id="try-heading">Explore public connections between</h2>
-      <p class="claim">The selected profile is only a graph starting point. This read-only page does not sign you in, record meetings, request an introduction, or check physical presence.</p>
-      <form id="try-form" class="try-pickers">
-        <label>Filter starting profiles<input id="try-source-filter" type="search" placeholder="Name"></label>
-        <label>Starting profile<select id="try-source" required></select></label>
-        <label>Filter target profiles<input id="try-target-filter" type="search" placeholder="Name"></label>
-        <label>Target profile<select id="try-target" required></select></label>
-        <div class="try-actions">
-          <button id="try-paths" type="submit">Find public paths</button>
-          <button id="try-openers" type="button">Create sourced openers</button>
-          <button id="try-example" type="button">Try a cited example</button>
+      <p class="graph-context-copy">Connections show sourced public work; graph distance is not physical location.</p>
+      <div class="graph-tools" role="group" aria-label="Graph filters and controls">
+        <div class="graph-search-control">
+          <label for="graph-search">Find a person</label>
+          <input id="graph-search" type="search" placeholder="Name" autocomplete="off">
+          <button id="graph-search-button" type="button">Find</button>
         </div>
-      </form>
-      <p class="claim">The example uses an existing cited public co-speaker or shared-work link.</p>
+        <details class="graph-map-options">
+          <summary>Map options</summary>
+          <div class="graph-map-control-grid">
+            <label for="graph-focus">Center on<select id="graph-focus"><option value="">Choose a public profile</option></select></label>
+            <label class="graph-3d-toggle"><input id="graph-3d-toggle" type="checkbox" checked> 3D view</label>
+            <label class="graph-compare-toggle"><input id="graph-public-comparison" type="checkbox"> Compare with a public profile</label>
+            <div class="graph-zoom" role="group" aria-label="Graph zoom">
+              <button id="graph-zoom-out" type="button" aria-label="Zoom out">−</button>
+              <button id="graph-zoom-reset" type="button">Reset</button>
+              <button id="graph-zoom-in" type="button" aria-label="Zoom in">+</button>
+            </div>
+          </div>
+        </details>
+      </div>
+      <p id="graph-rotate-hint" class="graph-rotate-hint">Drag to rotate.</p>
+      <details class="graph-topic-picker" aria-labelledby="graph-topics-heading">
+        <summary>Your interests · adjust</summary>
+        <div>
+          <h2 id="graph-topics-heading">Personalize with public topics</h2>
+          <p class="quiet-copy">Opted-in profile research may prefill interests. You can change them; “Looking for” topics are always chosen here.</p>
+        </div>
+        <div class="graph-topic-columns">
+          <fieldset><legend>Your interests</legend><div id="interest-topics" class="topic-chips"></div></fieldset>
+          <fieldset><legend>Looking for</legend><div id="seeking-topics" class="topic-chips"></div></fieldset>
+        </div>
+      </details>
+      <p id="graph-status" class="quiet-copy" role="status" aria-live="polite">Loading the conference people graph…</p>
+      <div class="graph-layout">
+        <div class="graph-frame">
+          <svg id="conference-graph" viewBox="0 0 520 520" role="group" aria-label="Interactive public people graph"></svg>
+        </div>
+        <aside id="graph-person-detail" class="graph-person-detail" aria-live="polite">
+          <h2>Select a profile</h2>
+          <p class="quiet-copy">Focus a public profile to inspect its conference role and sources.</p>
+        </aside>
+      </div>
+      <ul class="graph-legend" aria-label="Graph legend">
+        <li><span class="legend-dot attendee-dot" aria-hidden="true"></span>Confirmed attendee</li>
+        <li><span class="legend-dot speaker-dot" aria-hidden="true"></span>Scheduled speaker</li>
+        <li><span class="legend-line" aria-hidden="true"></span>Cited public relationship</li>
+      </ul>
+      <details class="graph-roster">
+        <summary>Browse people as a list</summary>
+        <div class="directory-people-grid">
+          <section><h2>Confirmed attendees</h2><div id="explore-attendees"></div></section>
+          <section><h2>Scheduled speakers</h2><div id="explore-speakers"></div></section>
+        </div>
+        <p class="quiet-copy">Scheduled speakers are not necessarily confirmed attendees. Submitted profile links are not matched to people in this graph.</p>
+      </details>
     </section>
-    <p id="try-status" class="claim" role="status" aria-live="polite">Loading public profiles…</p>
-    <section id="try-path-results" class="panel" aria-live="polite"></section>
-    <section id="try-opener-results" class="panel" aria-live="polite"></section>
+    <details class="public-pair-details">
+      <summary>Explore public profile connections</summary>
+      <div class="public-pair-content">
+        <h2 id="try-heading">Compare two public profiles</h2>
+        <p id="try-subline" class="quiet-copy">Find cited paths between two profiles in the public graph.</p>
+        <form id="try-form" class="try-pickers">
+          <label>Filter profiles<input id="try-source-filter" type="search" placeholder="Name"></label>
+          <label>Public comparison profile<select id="try-source" required></select></label>
+          <label>Filter target profiles<input id="try-target-filter" type="search" placeholder="Name"></label>
+          <label>Target profile<select id="try-target" required></select></label>
+          <div class="try-actions">
+            <button id="try-paths" type="submit">Find public paths</button>
+            <button id="try-openers" type="button">Create sourced openers</button>
+            <button id="try-example" type="button">Try a cited example</button>
+          </div>
+        </form>
+        <p class="quiet-copy">A public graph comparison does not identify you or confirm physical presence.</p>
+        <p id="try-status" class="claim" role="status" aria-live="polite">Loading public profiles…</p>
+        <section id="try-path-results" class="panel" aria-live="polite"></section>
+        <section id="try-opener-results" class="panel" aria-live="polite"></section>
+      </div>
+    </details>
   </main>
 </body>
 </html>

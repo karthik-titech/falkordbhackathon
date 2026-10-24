@@ -6,14 +6,25 @@ attendees are possible intermediaries, not replacement targets.
 ## Product flow
 
 The public entry point starts with a conference directory. Visitors can enter
-their own LinkedIn and X profile links or continue without them. These links are
-stored only for the browser session and can be cleared. Collecting them does not
-fetch a social profile, prove identity, or create private-graph consent. Profile
-enrichment and automatic identity matching are not implemented in this flow.
+their own LinkedIn and X profile links or continue without them. Explicit consent
+and Continue trigger Bright Data profile retrieval. Only professional fields are
+used to match existing conference topics. Raw profile responses are not stored;
+the browser keeps the resulting topic context and can clear it. Profile research
+does not prove identity or create private-graph consent. Personal profile
+enrichment calls are excluded from API recordings.
 
 Conference pages separate confirmed attendance from scheduled speaking
 appearances, with public source links. The public explorer compares two selected
 graph profiles without treating either selection as the visitor's identity.
+With personal interest topics, route evidence from an unrelated demonstration
+profile is excluded. Users choose sought capabilities explicitly.
+
+The conference map draws only sourced relationships, and displays a separate
+outer group for people without a supported path in that view. Categories and
+conversation scores abstain when their evidence requirements are not met.
+Decisions receives counts and fixed labels, including bounded mention-tone
+summaries; profile text, posts, names and URLs stay outside its input. Public
+mentions are context rather than verified reputation or relationship evidence.
 
 1. Choose the intended speaker and the conference.
 2. If you confirm that you are physically near the speaker, review sourced

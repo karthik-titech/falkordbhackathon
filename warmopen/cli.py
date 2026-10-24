@@ -56,14 +56,32 @@ def main(argv=None):
             return
         from .app import make_server
         from .decisions import decisions_client
+        from .brightdata import brightdata_client
+        from .brightdata_profiles import profile_client as make_profile_client
         from .llm import anthropic_llm
 
         decision_key = os.environ.get("DECISIONS_API_KEY")
         llm_key = os.environ.get("ANTHROPIC_API_KEY")
+        brightdata_key = os.environ.get("BRIGHTDATA_API_KEY")
+        brightdata_zone = os.environ.get("BRIGHTDATA_ZONE")
+        brightdata_serp_zone = os.environ.get("BRIGHTDATA_SERP_ZONE")
         jev = decisions_client(decision_key) if decision_key else None
         llm = anthropic_llm(llm_key) if llm_key else None
+        brightdata = (brightdata_client(brightdata_key, brightdata_zone)
+                      if brightdata_key and brightdata_zone else None)
+        profile_client = make_profile_client(brightdata_key, timeout=45) if brightdata_key else None
+        mentions = None
+        if brightdata_key and brightdata_serp_zone:
+            try:
+                from .mentions import mentions_client
+
+                mentions = mentions_client(brightdata_key, brightdata_serp_zone)
+            except ImportError:
+                mentions = None
         server = make_server(store, args.host, args.port, jev=jev, llm=llm,
-                             record_dir=args.record, public_landing=args.public_trial)
+                             record_dir=args.record, public_landing=args.public_trial,
+                             brightdata=brightdata, profile_client=profile_client,
+                             mentions=mentions)
     mode = "Recorded run" if args.replay else "Live run"
     print(f"{mode}: http://{args.host}:{server.server_address[1]}", flush=True)
     try:

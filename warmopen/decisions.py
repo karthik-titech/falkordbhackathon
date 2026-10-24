@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 API_URL = "https://api.openai.com/v1/decisions"
 MODEL = "gpt-6-luna"
 _LEGACY_MODEL = "jev-latest"
+_CONVERSATION_MODEL = "conference-conversation-v1"
 _QUESTION_NAMES = ("fit", "introducer", "cue_type", "next_action")
 _TIMING_LABELS = {"current", "future", "past_or_unknown"}
 _BASE_STATE_KEYS = {
@@ -35,6 +36,25 @@ _BOOL_FIELDS = (
     "has_stated_interest",
 )
 _ABSTRACT_BOOL_FIELDS = ("stage_match", "category_match")
+_CONVERSATION_STATE_KEYS = {
+    "topic_overlap_count", "seeking_overlap_count", "cited_route_count", "best_hops",
+    "supported_edge_count", "professional_evidence_count", "source_listed", "target_listed",
+    "public_context_count", "public_context_match_count", "opener_candidates", "mentions",
+}
+_CONVERSATION_COUNTS = {
+    "topic_overlap_count", "seeking_overlap_count", "cited_route_count",
+    "supported_edge_count", "professional_evidence_count", "public_context_count",
+    "public_context_match_count",
+}
+_CONVERSATION_FIT_CHOICES = ("high", "medium", "low", "INSUFFICIENT_EVIDENCE")
+_CONNECTION_CHOICES = ("mirror", "missing_piece", "unexpected_connection", "unknown")
+_OPENER_STYLES = {"public_talk", "shared_topic", "public_route", "public_context"}
+_MENTION_COUNTS = {
+    "professional_mention_count", "positive_mention_count", "neutral_mention_count",
+    "critical_mention_count", "unclear_mention_count", "recent_mention_count",
+    "mention_source_count",
+}
+_MENTION_KEYS = _MENTION_COUNTS | {"mentions_available"}
 
 
 def _invalid():
@@ -187,10 +207,107 @@ def _planner_questions(payload):
     return [_api_question("route", expected["route"])]
 
 
+def _conversation_expected(state):
+    fit_criteria = {
+        "high": "Several cited features support the choice.",
+        "medium": "Some cited features support the choice.",
+        "low": "The cited basis is limited.",
+        "INSUFFICIENT_EVIDENCE": "Abstain because the evidence is insufficient.",
+    }
+    category_criteria = {
+        "mirror": "The fixed topic overlap features support this label.",
+        "missing_piece": "The fixed seeking overlap features support this label.",
+        "unexpected_connection": "The fixed cited-route features support this label.",
+        "unknown": "No category is supported by the fixed features.",
+    }
+    opener_criteria = {
+        row["candidate_id"]: "Rank this anonymous source-backed opener candidate."
+        for row in state["opener_candidates"]
+    }
+    opener_criteria["INSUFFICIENT_EVIDENCE"] = "Abstain from ranking an opener."
+    questions = {}
+    for name in ("conversation_fit", "mirror_fit", "missing_piece_fit",
+                 "unexpected_connection_fit"):
+        questions[name] = {
+            "type": "choice",
+            "instructions": ("Choose a fixed fit level using only numeric and boolean public-evidence features. "
+                             "Professional mention tone is weak context only; do not infer reputation, "
+                             "personality, intent, or success probability from it."),
+            "criteria": fit_criteria,
+        }
+    questions["connection_type"] = {
+        "type": "choice",
+        "instructions": ("Use this precedence: missing_piece when seeking_overlap_count is positive; "
+                         "otherwise mirror when topic_overlap_count is positive; otherwise "
+                         "unexpected_connection when cited_route_count is positive; otherwise unknown."),
+        "criteria": category_criteria,
+    }
+    questions["opener"] = {
+        "type": "choice",
+        "instructions": "Choose one anonymous candidate using only its abstract style and support features.",
+        "criteria": opener_criteria,
+    }
+    return {"model": _CONVERSATION_MODEL, "state": state, "questions": questions}
+
+
+def conversation_payload(state):
+    """Build the closed, abstract schema used by the conversation decision."""
+    if type(state) is not dict or set(state) != _CONVERSATION_STATE_KEYS:
+        _invalid()
+    for key in _CONVERSATION_COUNTS:
+        if type(state[key]) is not int or state[key] < 0:
+            _invalid()
+    mentions = state["mentions"]
+    if (type(mentions) is not dict or set(mentions) != _MENTION_KEYS
+            or type(mentions["mentions_available"]) is not bool):
+        _invalid()
+    for key in _MENTION_COUNTS:
+        if type(mentions[key]) is not int or mentions[key] < 0:
+            _invalid()
+    if (state["best_hops"] is not None
+            and (type(state["best_hops"]) is not int or not 1 <= state["best_hops"] <= 6)):
+        _invalid()
+    if type(state["source_listed"]) is not bool or type(state["target_listed"]) is not bool:
+        _invalid()
+    candidates = state["opener_candidates"]
+    if type(candidates) is not list or len(candidates) > 3:
+        _invalid()
+    expected_ids = [f"candidate_{number}" for number in range(1, len(candidates) + 1)]
+    for candidate in candidates:
+        if (type(candidate) is not dict
+                or set(candidate) != {"candidate_id", "cited", "topic_match_count", "style"}
+                or candidate["candidate_id"] not in expected_ids
+                or type(candidate["cited"]) is not bool
+                or type(candidate["topic_match_count"]) is not int
+                or candidate["topic_match_count"] < 0
+                or candidate["style"] not in _OPENER_STYLES):
+            _invalid()
+    if [candidate["candidate_id"] for candidate in candidates] != expected_ids:
+        _invalid()
+    return _conversation_expected(state)
+
+
+def _conversation_questions(payload):
+    expected = conversation_payload(payload["state"])
+    if payload != expected:
+        _invalid()
+    return [_api_question(name, question) for name, question in expected["questions"].items()]
+
+
 def _wire_payload(payload):
     """Validate either internal choice contract, then translate to API schema."""
     if (type(payload) is not dict or set(payload) != {"model", "state", "questions"}
-            or payload["model"] != _LEGACY_MODEL or type(payload["state"]) is not dict):
+            or type(payload["state"]) is not dict):
+        _invalid()
+    if payload["model"] == _CONVERSATION_MODEL:
+        questions = _conversation_questions(payload)
+        state = payload["state"]
+        return {
+            "model": MODEL,
+            "input": [{"role": "user", "content": [{"type": "input_json", "data": state}]}],
+            "questions": questions,
+        }
+    if payload["model"] != _LEGACY_MODEL:
         _invalid()
     state = payload["state"]
     if _BASE_STATE_KEYS <= set(state):

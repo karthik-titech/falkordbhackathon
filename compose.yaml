@@ -16,6 +16,10 @@ services:
     environment:
       FALKORDB_HOST: graph
       FALKORDB_PORT: "6379"
+      DECISIONS_API_KEY: ${DECISIONS_API_KEY:-}
+      BRIGHTDATA_API_KEY: ${BRIGHTDATA_API_KEY:-}
+      BRIGHTDATA_ZONE: ${BRIGHTDATA_ZONE:-}
+      BRIGHTDATA_SERP_ZONE: ${BRIGHTDATA_SERP_ZONE:-}
     ports:
       - "127.0.0.1:8080:8080"
     command:

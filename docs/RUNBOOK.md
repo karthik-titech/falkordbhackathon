@@ -9,12 +9,21 @@ docker compose up --build
 ```
 
 Open <http://localhost:8080>. Choose a conference, then enter your own
-LinkedIn and X links or skip to the directory. The links stay in browser session
-storage; the app does not fetch or import social profiles. The directory labels
+LinkedIn and X links or skip to the directory. With explicit consent, Continue
+uses Bright Data to retrieve professional profile information and match interests
+to conference topics. The directory labels
 confirmed attendees and scheduled speakers separately. The public graph
 explorer at `/explore` needs no credentials and does not authenticate as a
 speaker or send an introduction. The web port is bound to the local machine.
 A public organizer URL needs a separate HTTPS deployment.
+
+Profile enrichment needs `BRIGHTDATA_API_KEY`. Additional public website research
+uses `BRIGHTDATA_ZONE`, and indexed public mention search uses
+`BRIGHTDATA_SERP_ZONE`. Pass secrets through the process environment or a private
+deployment secret facility; the public image contains none. Missing configuration
+produces an unavailable status rather than fabricated research. The profile
+Scraper API does not require a zone. Use names and company information to verify
+profile candidates before importing any links; never guess social handles.
 
 Stop the trial with `Ctrl-C`. Docker Compose keeps its graph data in a named
 volume when containers stop.

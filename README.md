@@ -13,15 +13,28 @@ docker compose up --build
 ```
 
 Open <http://localhost:8080> and choose a conference. Add your own LinkedIn
-and X profile links or skip that step to try the demo without signup. Links stay
-in your browser session; this version does not fetch those profiles or match
-them to a graph identity.
+and X profile links or skip that step to try the demo without signup. With your
+explicit consent, Bright Data retrieves public professional information and
+matches it to conference topics. You can review the interests and separately
+choose what you are looking for. This does not establish your graph identity.
 
 Browse confirmed attendees and scheduled speakers under separate labels. The
 bundled data is a sourced speaker dataset, not a confirmed attendee roster.
+The conference people map centers on a selected profile and shows sourced public
+connections. Click a person to explore their neighborhood and inspect the sources.
+Graph distance describes connections within the conference graph, not physical
+location. A searchable list remains available alongside the map.
 The public connection explorer is available at `/explore`; selecting a profile
 there does not authenticate as that person or send an introduction. No provider
 credentials or private demo data are needed for the public trial.
+
+Select a target to see whether the evidence supports a mirror, missing piece,
+or unexpected connection. Research and assessment run only when requested.
+Click **Help me start a conversation** to get three ranked opening lines first,
+with public sources where available. Conversation fit is uncalibrated. When the
+model cannot assess a match, a separately labeled rough starting estimate uses
+available evidence counts; it is not a prediction of friendship.
+Public post tone is summarized as context, not a verified assessment of a person.
 
 ## Plan a conference conversation
 

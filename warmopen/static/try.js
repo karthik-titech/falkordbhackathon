@@ -3,6 +3,15 @@ const $ = id => document.getElementById(id);
 document.title = `${PRODUCT_NAME} · Public graph exploration`;
 $("try-product-name").textContent = PRODUCT_NAME;
 let people = [], names = {}, evidence = {}, example = null, busy = false;
+let conferenceRoster = {}, conferenceGraph = null, defaultGraphFocus = "", graphZoom = 1, graphRequestToken = 0;
+let graphYaw = -0.35, graphPitch = 0.28, graphPointer = null, suppressGraphClick = false;
+let conferenceTopics = [], interestTopicIds = new Set(), seekingTopicIds = new Set(), profileTopicContext = null;
+let conversationResults = new Map(), conversationBusy = false;
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const GRAPH_LIMIT = 48;
+const GRAPH_CATEGORIES = new Set(["shared_work", "co_speaker", "coauthor"]);
+const PROFILE_CONTEXT_KEY = "warmopen_profile_context_v1";
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -12,13 +21,22 @@ function node(tag, text, className) {
 }
 function sourceLink(url, label) {
   const link = node("a", label);
+  const href = safeHttpUrl(url);
+  if (href) { link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; }
+  return link;
+}
+function safeHttpUrl(url) {
   try {
     const parsed = new URL(url);
-    if (["https:", "http:"].includes(parsed.protocol)) {
-      link.href = parsed.href; link.target = "_blank"; link.rel = "noopener noreferrer";
-    }
+    if (["https:", "http:"].includes(parsed.protocol)) return parsed.href;
   } catch (_) { /* Keep malformed sources as plain text. */ }
-  return link;
+  return null;
+}
+function svgElement(tag, attributes = {}, text) {
+  const element = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+  if (text !== undefined) element.textContent = text;
+  return element;
 }
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {
@@ -118,7 +136,7 @@ function renderDirectoryRows(container, people, category) {
   }
   for (const person of people) {
     const row = node("article", undefined, "directory-person");
-    row.append(node("h3", person.name || person.id));
+    row.append(node("h3", person.name || "Unnamed public profile"));
     if (person.overlap) row.append(node("p", category === "attendee"
       ? "Also listed as a scheduled speaker."
       : "Also listed as a confirmed attendee.", "directory-overlap"));
@@ -127,12 +145,754 @@ function renderDirectoryRows(container, people, category) {
         row.append(node("p", talk.title || "Scheduled talk", "directory-talk"));
       }
     }
-    for (const evidenceId of person.evidence_ids || []) {
+    for (const [index, evidenceId] of (person.evidence_ids || []).entries()) {
       const source = evidence[evidenceId];
-      if (source) row.append(sourceLink(source.url, source.claim || "Public source"));
+      if (source && safeHttpUrl(source.url)) row.append(sourceLink(source.url, `Source ${index + 1}`));
     }
     container.append(row);
   }
+}
+
+function graphRoles(roles) {
+  const values = Array.isArray(roles) ? roles : [];
+  return {
+    attendee: values.includes("confirmed_attendee"),
+    speaker: values.includes("scheduled_speaker"),
+  };
+}
+function graphRoleLabel(roles) {
+  const {attendee, speaker} = graphRoles(roles);
+  if (attendee && speaker) return "Confirmed attendee and scheduled speaker";
+  if (attendee) return "Confirmed attendee";
+  if (speaker) return "Scheduled speaker";
+  return "Public profile";
+}
+function graphDistanceLabel(distance, isCenter) {
+  if (isCenter) return "Focused profile";
+  if (distance === null) return "No supported path in this view";
+  return `${distance} ${distance === 1 ? "link" : "links"} from the focus`;
+}
+function textShort(name, limit = 14) {
+  const characters = Array.from(name || "");
+  return characters.length > limit ? characters.slice(0, limit).join("") + "…" : (name || "Public profile");
+}
+function edgeHasPublicCitation(edge) {
+  if (!GRAPH_CATEGORIES.has(edge.category) || !Array.isArray(edge.evidence_ids)) return false;
+  return edge.evidence_ids.some(id => evidence[id] && safeHttpUrl(evidence[id].url));
+}
+function renderGraphDetail(personId) {
+  const container = $("graph-person-detail");
+  container.replaceChildren();
+  const graphNode = conferenceGraph?.nodes.find(item => item.id === personId);
+  if (!graphNode) {
+    container.append(node("h2", "Select a profile"),
+      node("p", "Focus a public profile to inspect its conference role and sources.", "quiet-copy"));
+    return;
+  }
+  const isCenter = personId === conferenceGraph.center_id;
+  const roles = graphRoles(graphNode.roles);
+  const rosterPerson = conferenceRoster[personId] || {};
+  container.append(node("p", "PUBLIC PROFILE", "graph-detail-kicker"));
+  container.append(node("h2", graphNode.name));
+  const roleLabels = [];
+  if (roles.attendee) roleLabels.push("Confirmed attendee");
+  if (roles.speaker) roleLabels.push("Scheduled speaker");
+  container.append(node("p", roleLabels.join(" · ") || "Public conference profile", "graph-detail-role"));
+  const distance = graphDistanceLabel(graphNode.distance, isCenter);
+  container.append(node("p", `${distance}. Graph distance does not indicate physical location.`, "graph-detail-distance"));
+  const categories = {
+    mirror: {label: "Mirror", className: "graph-category-mirror"},
+    missing_piece: {label: "Missing piece", className: "graph-category-missing"},
+    unexpected_connection: {label: "Unexpected connection", className: "graph-category-unexpected"},
+  };
+  const comparison = Object.prototype.hasOwnProperty.call(categories, graphNode.connection_type)
+    ? categories[graphNode.connection_type] : {label: "Add interests to personalize", className: "graph-category-unknown"};
+  container.append(node("p", comparison.label, `graph-category-badge ${comparison.className}`));
+  const categoryReasons = {
+    mirror: "Shares a cited public topic or work signal with the selected profile.",
+    missing_piece: "Has cited evidence about a topic the selected profile is looking for.",
+    unexpected_connection: "A cited public relationship path connects this profile to the selected profile.",
+  };
+  const reason = typeof graphNode.reason === "string" && graphNode.reason.length <= 240
+    ? graphNode.reason : (categoryReasons[graphNode.connection_type]
+      || "Not enough supported public context to compare this profile yet.");
+  container.append(node("p", reason, "graph-detail-reason"));
+  const sourceId = graphSourceId();
+  const sourceName = names[sourceId] || $("try-source").selectedOptions[0]?.textContent;
+  container.append(node("p", sourceId && sourceName
+    ? `Public profile comparison: ${sourceName}. Your submitted profile links are not matched to this graph profile.`
+    : (interestTopicIds.size || seekingTopicIds.size
+      ? "Using only the topic choices in this browser session. No conference profile is treated as you."
+      : "Select topics or enable an explicit public profile comparison to personalize this view."), "graph-comparison-note"));
+
+  const talks = Array.isArray(rosterPerson.talks) ? rosterPerson.talks : [];
+  if (talks.length) {
+    container.append(node("h3", "Scheduled talks"));
+    const list = node("ul", undefined, "graph-talk-list");
+    for (const talk of talks.slice(0, 4)) {
+      const item = node("li");
+      item.append(document.createTextNode(talk.title || "Scheduled talk"));
+      const sourceId = (rosterPerson.evidence_ids || []).find(id => evidence[id] && safeHttpUrl(evidence[id].url));
+      if (sourceId) item.append(document.createTextNode(" · "), sourceLink(evidence[sourceId].url, "Source"));
+      list.append(item);
+    }
+    container.append(list);
+  }
+
+  const sourceIds = new Set(rosterPerson.evidence_ids || []);
+  for (const evidenceId of graphNode.context_evidence_ids || []) sourceIds.add(evidenceId);
+  for (const edge of conferenceGraph.edges || []) {
+    if (edge.source === personId || edge.target === personId) {
+      for (const evidenceId of edge.evidence_ids || []) sourceIds.add(evidenceId);
+    }
+  }
+  const sources = Array.from(sourceIds).filter(id => evidence[id] && safeHttpUrl(evidence[id].url)).slice(0, 8);
+  container.append(node("h3", "Public sources"));
+  if (sources.length) {
+    const list = node("ul", undefined, "graph-source-list");
+    for (const [index, evidenceId] of sources.entries()) {
+      const item = node("li");
+      item.append(sourceLink(evidence[evidenceId].url, `Source ${index + 1}`));
+      list.append(item);
+    }
+    container.append(list);
+  } else {
+    container.append(node("p", "No public source links are available in this view.", "quiet-copy"));
+  }
+  renderConversationPanel(container, personId);
+}
+
+function conversationKey(targetId) {
+  return JSON.stringify([
+    graphSourceId(),
+    targetId,
+    Array.from(interestTopicIds).sort(),
+    Array.from(seekingTopicIds).sort(),
+  ]);
+}
+function confidenceCopy(value) {
+  return typeNumber(value) && value >= 0 && value <= 1
+    ? `Confidence: ${Math.round(value * 100)}%` : "Confidence unavailable";
+}
+function typeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function renderConversationPanel(container, targetId) {
+  const panel = node("section", undefined, "graph-conversation-panel");
+  panel.append(node("h3", "Start a conversation"));
+  const key = conversationKey(targetId), result = conversationResults.get(key);
+  const actions = node("div", undefined, "graph-conversation-actions");
+  const research = node("button", "Help me start a conversation", "graph-action-button graph-action-primary");
+  const sourceId = graphSourceId();
+  const sameSourceTarget = Boolean(sourceId && sourceId === targetId);
+  research.disabled = sameSourceTarget || conversationBusy;
+  research.setAttribute("type", "button");
+  research.addEventListener("click", () => assessConversation(targetId, true));
+  actions.append(research);
+  panel.append(actions);
+  const interestsLink = node("button", interestTopicIds.size || seekingTopicIds.size
+    ? "Adjust interests for more personal suggestions" : "Add interests for more personal suggestions", "graph-interests-link");
+  interestsLink.type = "button";
+  interestsLink.addEventListener("click", () => {
+    const details = $("graph-topic-picker");
+    details.open = true;
+    details.querySelector("summary")?.focus();
+  });
+  panel.append(interestsLink);
+
+  const status = node("p", "", "graph-action-status");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  panel.append(status);
+  if (result) renderConversationResult(panel, result);
+  container.append(panel);
+}
+function renderConversationResult(container, data) {
+  const assessment = data.assessment || {};
+  const modelScore = boundedScore(assessment.score);
+  const roughScore = boundedScore(assessment.rough_score);
+  const useRoughScore = modelScore === null && roughScore !== null;
+  renderOpeningLines(container, data.ranked_openers);
+  const match = node("section", undefined, "graph-match-summary");
+  match.append(node("h3", "Why this person"));
+  const matchLabels = {mirror: "Mirror", missing_piece: "Missing piece",
+    unexpected_connection: "Unexpected connection"};
+  const matchType = matchLabels[data.connection_type] ? data.connection_type : null;
+  const matchClass = {mirror: "mirror", missing_piece: "missing", unexpected_connection: "unexpected"};
+  match.append(node("span", matchType ? matchLabels[matchType] : "Add interests to personalize",
+    `graph-category-badge ${matchType ? `graph-category-${matchClass[matchType]}` : "graph-category-unknown"}`));
+  const displayedScore = modelScore === null ? roughScore : modelScore;
+  if (useRoughScore) {
+    match.append(node("span", "Uncalibrated fit · starting estimate", "graph-estimate-pill"));
+    match.append(node("span", `~${Math.round(roughScore)}/100`, "graph-inline-score graph-inline-estimate"));
+    match.append(node("p", "Based on limited conference information.", "graph-estimate-note"));
+  } else if (displayedScore !== null) {
+    match.append(node("span", `Uncalibrated fit ${Math.round(displayedScore)}/100`, "graph-inline-score"));
+  } else {
+    match.append(node("span", "No estimate available", "graph-inline-score graph-inline-estimate"));
+  }
+  const confidence = typeNumber(assessment.model_confidence)
+    && assessment.model_confidence >= 0 && assessment.model_confidence <= 1
+    ? confidenceCopy(assessment.model_confidence)
+    : (useRoughScore ? "Model confidence unavailable; this is a rough starting estimate."
+      : "Model confidence unavailable.");
+  match.append(node("p", confidence, "graph-result-confidence"));
+  if (typeof data.reason === "string" && data.reason.trim()) {
+    match.append(node("p", data.reason.trim().slice(0, 180), "graph-match-reason"));
+  }
+  container.append(match);
+  if (Array.isArray(data.categories) && data.categories.length) {
+    const details = node("details", undefined, "graph-match-details");
+    details.append(node("summary", "See match details"));
+    const list = node("div", undefined, "graph-category-list");
+    for (const [index, category] of data.categories.slice(0, 3).entries()) {
+      const row = node("article", undefined, "graph-category-row");
+      const type = ["mirror", "missing_piece", "unexpected_connection"].includes(category.type)
+        ? category.type : "unknown";
+      const labels = {mirror: "Mirror", missing_piece: "Missing piece",
+        unexpected_connection: "Unexpected connection", unknown: "Needs context"};
+      const title = node("span", `${index + 1}. ${labels[type]}`, "graph-category-title");
+      const categoryModelScore = boundedScore(category.score);
+      const categoryRoughScore = boundedScore(category.rough_score);
+      const categoryScore = categoryModelScore === null ? categoryRoughScore : categoryModelScore;
+      const scoreText = categoryScore === null ? "Needs context"
+        : `${categoryModelScore === null ? "~" : ""}${Math.round(categoryScore)}/100`;
+      row.append(title, node("span", scoreText, "graph-category-score"));
+      const reason = Array.isArray(category.reasons)
+        ? category.reasons.find(item => typeof item === "string" && item.trim()
+          && item.trim().toLowerCase() !== "needs context.") : null;
+      if (reason) row.append(node("p", reason.trim().slice(0, 180), "graph-category-reason"));
+      list.append(row);
+    }
+    details.append(list);
+    container.append(details);
+  }
+  const evidenceIds = data.context && Array.isArray(data.context.evidence_ids) ? data.context.evidence_ids : [];
+  const contextSources = evidenceIds.filter(id => evidence[id] && safeHttpUrl(evidence[id].url)).slice(0, 6);
+  if (contextSources.length) {
+    const links = node("details", undefined, "graph-context-sources");
+    links.append(node("summary", "Public evidence"));
+    for (const [index, id] of contextSources.entries()) {
+      const row = node("p", undefined, "graph-evidence-source");
+      row.append(sourceLink(evidence[id].url, `Source ${index + 1}`));
+      if (typeof evidence[id].claim === "string") row.append(document.createTextNode(` · ${evidence[id].claim.slice(0, 200)}`));
+      links.append(row);
+    }
+    container.append(links);
+  }
+  if (data.mentions && typeof data.mentions === "object") renderMentions(container, data.mentions);
+  const refresh = data.refresh || {};
+  const statuses = {not_requested: "Public context was not refreshed.", unavailable: "Public context refresh is unavailable.",
+    ok: "Public context was refreshed.", failed: "Public context could not be refreshed."};
+  if (refresh.status && refresh.status !== "not_requested") {
+    container.append(node("p", statuses[refresh.status] || "Public context refresh status is unknown.", "graph-refresh-status"));
+  }
+}
+function boundedScore(value) {
+  return typeNumber(value) && value >= 0 && value <= 100 ? value : null;
+}
+function renderOpeningLines(container, rankedOpeners) {
+  const fallback = [
+    "What are you hoping to learn or discuss at this conference?",
+    "Which session or topic has caught your attention so far?",
+    "What would make this conference especially useful for you?",
+  ];
+  const openers = Array.isArray(rankedOpeners) ? rankedOpeners.slice()
+    .filter(item => item && typeof item.text === "string" && item.text.trim())
+    .sort((left, right) => (Number.isInteger(left.rank) ? left.rank : 99)
+      - (Number.isInteger(right.rank) ? right.rank : 99)).slice(0, 3) : [];
+  const displayItems = openers.length ? openers : fallback.map((text, index) => ({text, rank: index + 1}));
+  container.append(node("h3", "Try saying…"));
+  const list = node("div", undefined, "graph-opening-list");
+  displayItems.forEach((item, index) => {
+    const card = node("article", undefined, `graph-opener-card${index === 0 ? " graph-opener-featured" : ""}`);
+    const rank = Number.isInteger(item.rank) && item.rank > 0 ? item.rank : index + 1;
+    card.append(node("span", String(rank).padStart(2, "0"), "graph-opener-rank"));
+    card.append(node("p", item.text.trim(), "graph-opener-text"));
+    const cited = evidence[item.evidence_id];
+    if (cited && safeHttpUrl(cited.url)) {
+      const fact = node("details", undefined, "graph-opener-source");
+      fact.append(node("summary", "Based on public source"), sourceLink(cited.url, "View source"),
+        node("p", cited.claim || "Public source fact", "graph-opener-fact"));
+      card.append(fact);
+    }
+    list.append(card);
+  });
+  container.append(list);
+}
+function renderMentions(container, mentions) {
+  const details = node("details", undefined, "graph-mentions");
+  details.append(node("summary", "Public professional mentions"));
+  details.append(node("p", "Tone describes the post, not a verified fact about the person.", "graph-mentions-caveat"));
+  const items = Array.isArray(mentions.items) ? mentions.items.filter(item => item
+    && typeof item === "object" && typeof item.url === "string") : [];
+  if (!items.length) {
+    const notRequested = mentions.status === "not_requested";
+    const successfulEmpty = ["complete", "ok", "no_results", "empty"].includes(mentions.status);
+    details.append(node("p", notRequested
+      ? "Mention search runs when you choose Help me start a conversation."
+      : (successfulEmpty ? "No public professional mentions were found for this search."
+        : "Mention search is not available right now."), "graph-mentions-empty"));
+    container.append(details);
+    return;
+  }
+  const platformLabels = {x: "X", linkedin: "LinkedIn"};
+  const toneLabels = {positive: "Positive", neutral: "Neutral", critical: "Critical", unclear: "Unclear"};
+  for (const item of items.slice(0, 8)) {
+    const article = node("article", undefined, "graph-mention-item");
+    const title = typeof item.title === "string" && item.title.trim()
+      ? item.title.trim().slice(0, 240) : "Public professional post";
+    article.append(node("h4", title));
+    const meta = node("p", undefined, "graph-mention-meta");
+    const platform = platformLabels[item.platform] || "Public source";
+    meta.append(node("span", platform));
+    if (typeof item.published_at === "string" && item.published_at.trim()) {
+      meta.append(document.createTextNode(` · ${item.published_at.trim().slice(0, 64)}`));
+    }
+    const tone = Object.prototype.hasOwnProperty.call(toneLabels, item.tone) ? item.tone : "unclear";
+    meta.append(document.createTextNode(" · "), node("span", `Post tone: ${toneLabels[tone]}`, `graph-mention-tone graph-mention-tone-${tone}`));
+    article.append(meta);
+    if (typeof item.excerpt === "string" && item.excerpt.trim()) {
+      article.append(node("p", item.excerpt.trim().slice(0, 1200), "graph-mention-excerpt"));
+    }
+    const href = safeHttpUrl(item.url);
+    if (href) article.append(sourceLink(href, `${platform} source`));
+    else article.append(node("span", "Source link unavailable.", "quiet-copy"));
+    details.append(article);
+  }
+  container.append(details);
+}
+async function assessConversation(targetId, refresh) {
+  const sourceId = graphSourceId();
+  const conferenceId = new URLSearchParams(window.location.search).get("conference");
+  if ((sourceId && sourceId === targetId) || !conferenceId || conversationBusy) return;
+  conversationBusy = true;
+  const requestKey = conversationKey(targetId);
+  const requestedInterests = Array.from(interestTopicIds);
+  const requestedSeeking = Array.from(seekingTopicIds);
+  const requestIsCurrent = () => requestKey === conversationKey(targetId)
+    && conferenceGraph?.center_id === targetId && $("graph-focus").value === targetId;
+  const status = $("graph-person-detail").querySelector(".graph-action-status");
+  if (status) status.textContent = refresh ? "Researching cited public context and preparing suggestions…" : "Assessing graph-supported context…";
+  $("graph-person-detail").querySelectorAll(".graph-action-button").forEach(button => { button.disabled = true; });
+  const body = {
+    target: targetId,
+    refresh,
+    interest_topic_ids: requestedInterests,
+    seeking_topic_ids: requestedSeeking,
+  };
+  if (sourceId) body.source = sourceId;
+  let failed = false;
+  try {
+    const response = await fetch(`/api/conferences/${encodeURIComponent(conferenceId)}/conversation`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error("Conversation assessment unavailable");
+    const data = await response.json();
+    Object.assign(evidence, data.evidence || {});
+    conversationResults.set(requestKey, data);
+    if (requestIsCurrent()) {
+      const graphNode = conferenceGraph?.nodes.find(item => item.id === targetId);
+      if (graphNode) {
+        graphNode.connection_type = data.connection_type;
+        graphNode.reason = data.reason;
+        graphNode.reason_code = data.reason_code;
+        graphNode.context_evidence_ids = data.context?.evidence_ids || [];
+      }
+    }
+  } catch (_) {
+    failed = requestIsCurrent();
+  } finally {
+    conversationBusy = false;
+    if (conferenceGraph) renderGraphDetail(conferenceGraph.center_id);
+    if (failed) {
+      const currentStatus = $("graph-person-detail").querySelector(".graph-action-status");
+      if (currentStatus) currentStatus.textContent = "Could not retrieve public conversation context. Try again or continue browsing.";
+    }
+  }
+}
+function graphPositions(graph, use3D = $("graph-3d-toggle").checked) {
+  const centerX = 260, centerY = 260, positions = new Map();
+  const center = graph.nodes.find(item => item.id === graph.center_id);
+  if (center) positions.set(center.id, {x: centerX, y: centerY, distance: 0, z: 0, scale: 1});
+  const groups = new Map();
+  for (const item of graph.nodes) {
+    if (item.id === graph.center_id) continue;
+    const distance = Number.isInteger(item.distance) && item.distance >= 1 && item.distance <= 6
+      ? item.distance : null;
+    const key = distance === null ? "outer" : String(distance);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const cosineYaw = Math.cos(graphYaw), sineYaw = Math.sin(graphYaw);
+  const cosinePitch = Math.cos(graphPitch), sinePitch = Math.sin(graphPitch);
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (const [key, group] of groups) {
+    group.sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+    const distance = key === "outer" ? null : Number(key);
+    const radius = use3D ? (distance === null ? 178 : 33 + distance * 21)
+      : (distance === null ? 244 : 46 + distance * 29);
+    group.forEach((item, index) => {
+      if (!use3D) {
+        const angle = -Math.PI / 2 + (Math.PI * 2 * index) / group.length;
+        positions.set(item.id, {x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle), distance, z: 0, scale: 1});
+        return;
+      }
+      const vertical = 1 - 2 * ((index + 0.5) / group.length);
+      const horizontal = Math.sqrt(Math.max(0, 1 - vertical * vertical));
+      const angle = goldenAngle * index + (distance === null ? 2.7 : distance * 0.71);
+      const originalX = radius * horizontal * Math.cos(angle);
+      const originalY = radius * vertical;
+      const originalZ = radius * horizontal * Math.sin(angle);
+      const yawX = originalX * cosineYaw + originalZ * sineYaw;
+      const yawZ = -originalX * sineYaw + originalZ * cosineYaw;
+      const rotatedY = originalY * cosinePitch - yawZ * sinePitch;
+      const rotatedZ = originalY * sinePitch + yawZ * cosinePitch;
+      const perspective = 900 / (900 - rotatedZ);
+      positions.set(item.id, {x: centerX + yawX * perspective,
+        y: centerY + rotatedY * perspective, distance, z: rotatedZ, scale: perspective});
+    });
+  }
+  return positions;
+}
+function graphNodeClass(item, isCenter) {
+  if (isCenter) return "graph-node graph-node-center";
+  const roles = graphRoles(item.roles);
+  if (roles.attendee && roles.speaker) return "graph-node graph-node-both";
+  if (roles.attendee) return "graph-node graph-node-attendee";
+  if (roles.speaker) return "graph-node graph-node-speaker";
+  return "graph-node graph-node-other";
+}
+function activateGraphNode(personId) {
+  const select = $("graph-focus");
+  if (Array.from(select.options).some(option => option.value === personId)) select.value = personId;
+  loadConferenceGraph({focus: personId, query: $("graph-search").value.trim(), returnFocus: true});
+}
+function graphSourceId() {
+  return $("graph-public-comparison").checked ? $("try-source").value : "";
+}
+function graphSourceChanged() {
+  if (conferenceGraph) {
+    loadConferenceGraph({focus: conferenceGraph.center_id, query: $("graph-search").value.trim()});
+  } else if (new URLSearchParams(window.location.search).has("conference")) {
+    loadConferenceGraph({query: $("graph-search").value.trim()});
+  }
+}
+function renderConferenceGraph(returnFocus = false, preserveDetail = false) {
+  const svg = $("conference-graph");
+  svg.replaceChildren();
+  if (!conferenceGraph || !Array.isArray(conferenceGraph.nodes)) return;
+  const use3D = $("graph-3d-toggle").checked;
+  const centerX = 260, centerY = 260;
+  svg.classList.toggle("graph-view-3d", use3D);
+  svg.classList.toggle("graph-drag-active", Boolean(graphPointer?.dragging));
+  svg.setAttribute("aria-label", use3D
+    ? "Interactive 3D public people graph. Drag to rotate."
+    : "Interactive 2D public people graph.");
+  $("graph-rotate-hint").textContent = use3D
+    ? "Drag to rotate."
+    : "2D view · enable 3D to rotate.";
+  const root = svgElement("g", {
+    class: "graph-viewport",
+    transform: `translate(${centerX * (1 - graphZoom)} ${centerY * (1 - graphZoom)}) scale(${graphZoom})`,
+  });
+  if (use3D) {
+    for (let distance = 1; distance <= 6; distance += 1) {
+      const radius = 33 + distance * 21;
+      root.append(svgElement("ellipse", {cx: centerX, cy: centerY, rx: radius,
+        ry: radius * 0.88, class: "graph-shell-guide"}));
+    }
+    root.append(svgElement("ellipse", {cx: centerX, cy: centerY, rx: 178, ry: 157,
+      class: "graph-unreachable-ring"}));
+    root.append(svgElement("ellipse", {cx: centerX, cy: centerY, rx: 178, ry: 52,
+      class: "graph-sphere-latitude", transform: `rotate(${graphYaw * 18} ${centerX} ${centerY})`}));
+    root.append(svgElement("text", {x: centerX, y: 76, class: "graph-unreachable-label",
+      "text-anchor": "middle", "aria-hidden": "true"}, "No supported path in this view"));
+  } else {
+    for (let distance = 1; distance <= 6; distance += 1) {
+      const radius = 46 + distance * 29;
+      root.append(svgElement("circle", {cx: centerX, cy: centerY, r: radius, class: "graph-hop-ring"}));
+      root.append(svgElement("text", {x: centerX, y: centerY - radius + 13,
+        class: "graph-ring-label", "text-anchor": "middle", "aria-hidden": "true"}, String(distance)));
+    }
+    root.append(svgElement("circle", {cx: centerX, cy: centerY, r: 244, class: "graph-unreachable-ring"}));
+    root.append(svgElement("text", {x: centerX, y: 25, class: "graph-unreachable-label",
+      "text-anchor": "middle", "aria-hidden": "true"}, "No supported path in this view"));
+  }
+
+  const positions = graphPositions(conferenceGraph, use3D);
+  const edges = (conferenceGraph.edges || []).map(edge => ({
+    edge, from: positions.get(edge.source), to: positions.get(edge.target),
+  })).filter(item => item.from && item.to && item.from !== item.to && edgeHasPublicCitation(item.edge));
+  edges.sort((left, right) => (left.from.z + left.to.z) - (right.from.z + right.to.z));
+  for (const {edge, from, to} of edges) {
+    const depth = use3D ? Math.max(0.2, Math.min(0.72, 0.42 + ((from.z + to.z) / 2) / 700)) : 0.55;
+    root.append(svgElement("line", {x1: from.x, y1: from.y, x2: to.x, y2: to.y,
+      class: `graph-edge graph-edge-${edge.category}`, opacity: depth, "aria-hidden": "true"}));
+  }
+  const labelIds = new Set(conferenceGraph.nodes.filter(item => item.id !== conferenceGraph.center_id
+    && item.distance !== null).slice().sort((left, right) => left.distance - right.distance
+    || left.name.localeCompare(right.name)).slice(0, 13).map(item => item.id));
+  const renderNodes = conferenceGraph.nodes.slice().sort((left, right) => {
+    if (left.id === conferenceGraph.center_id) return 1;
+    if (right.id === conferenceGraph.center_id) return -1;
+    return (positions.get(left.id)?.z || 0) - (positions.get(right.id)?.z || 0);
+  });
+  for (const item of renderNodes) {
+    const point = positions.get(item.id);
+    if (!point || typeof item.name !== "string" || !Array.isArray(item.roles)) continue;
+    const isCenter = item.id === conferenceGraph.center_id;
+    const roles = graphRoleLabel(item.roles);
+    const distanceLabel = graphDistanceLabel(point.distance, isCenter);
+    const group = svgElement("g", {
+      class: graphNodeClass(item, isCenter),
+      role: "button",
+      tabindex: "0",
+      "aria-label": `${item.name}, ${roles}, ${distanceLabel}. Activate to focus this profile.`,
+      "aria-pressed": isCenter ? "true" : "false",
+      "data-node-id": item.id,
+    });
+    group.append(svgElement("title", {}, `${item.name} · ${roles} · ${distanceLabel}`));
+    const nodeScale = use3D ? point.scale : 1;
+    group.append(svgElement("circle", {cx: point.x, cy: point.y,
+      r: Math.max(6, (isCenter ? 15 : 10) * nodeScale), opacity: use3D ? 0.66 + nodeScale * 0.27 : 1}));
+    let anchor = "middle", labelX = point.x, labelY = point.y + (isCenter ? 33 : 25);
+    if (!isCenter) {
+      const dx = point.x - centerX;
+      anchor = dx > 12 ? "start" : (dx < -12 ? "end" : "middle");
+      labelX += dx > 12 ? 14 : (dx < -12 ? -14 : 0);
+      labelY = point.y + 4;
+    }
+    const quietLabel = !isCenter && !labelIds.has(item.id);
+    group.append(svgElement("text", {x: labelX, y: labelY,
+      class: quietLabel ? "graph-node-label graph-label-quiet" : "graph-node-label",
+      "text-anchor": anchor}, isCenter ? item.name : textShort(item.name)));
+    if (isCenter) {
+      const categoryLabels = {mirror: "Mirror", missing_piece: "Missing piece",
+        unexpected_connection: "Unexpected connection"};
+      if (categoryLabels[item.connection_type]) {
+        group.append(svgElement("text", {x: point.x, y: labelY + 17,
+          class: "graph-category-label", "text-anchor": "middle"}, categoryLabels[item.connection_type]));
+      }
+    }
+    group.addEventListener("click", () => activateGraphNode(item.id));
+    group.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activateGraphNode(item.id);
+      }
+    });
+    root.append(group);
+  }
+  svg.append(root);
+  if (!preserveDetail) renderGraphDetail(conferenceGraph.center_id);
+  if (returnFocus) {
+    const selected = Array.from(svg.querySelectorAll("[data-node-id]"))
+      .find(element => element.getAttribute("data-node-id") === conferenceGraph.center_id);
+    selected?.focus();
+  }
+}
+function setGraphControlsLoading(loading) {
+  for (const id of ["graph-search", "graph-search-button", "graph-focus"]) $(id).disabled = loading;
+}
+function setupGraphRotation() {
+  const svg = $("conference-graph");
+  svg.addEventListener("pointerdown", event => {
+    if (!$("graph-3d-toggle").checked || event.button !== 0) return;
+    graphPointer = {pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      lastX: event.clientX, lastY: event.clientY, dragging: false};
+    try { svg.setPointerCapture(event.pointerId); } catch (_) { /* Pointer capture is optional. */ }
+  });
+  svg.addEventListener("pointermove", event => {
+    if (!graphPointer || event.pointerId !== graphPointer.pointerId) return;
+    const dx = event.clientX - graphPointer.lastX;
+    const dy = event.clientY - graphPointer.lastY;
+    if (!graphPointer.dragging
+        && Math.hypot(event.clientX - graphPointer.startX, event.clientY - graphPointer.startY) > 4) {
+      graphPointer.dragging = true;
+    }
+    if (!graphPointer.dragging) return;
+    const bounds = svg.getBoundingClientRect();
+    graphYaw += dx * (Math.PI * 2 / Math.max(1, bounds.width));
+    graphPitch = Math.max(-1.35, Math.min(1.35,
+      graphPitch + dy * (Math.PI / Math.max(1, bounds.height))));
+    graphPointer.lastX = event.clientX;
+    graphPointer.lastY = event.clientY;
+    if (event.cancelable) event.preventDefault();
+    renderConferenceGraph(false, true);
+  });
+  const finishPointer = event => {
+    if (!graphPointer || event.pointerId !== graphPointer.pointerId) return;
+    const pointerId = graphPointer.pointerId;
+    const didDrag = graphPointer.dragging;
+    graphPointer = null;
+    if (didDrag) {
+      suppressGraphClick = true;
+      window.setTimeout(() => { suppressGraphClick = false; }, 0);
+    }
+    try { if (svg.hasPointerCapture(pointerId)) svg.releasePointerCapture(pointerId); }
+    catch (_) { /* Capture may already have been released by the browser. */ }
+    svg.classList.remove("graph-drag-active");
+  };
+  svg.addEventListener("pointerup", finishPointer);
+  svg.addEventListener("pointercancel", finishPointer);
+  svg.addEventListener("click", event => {
+    if (!suppressGraphClick) return;
+    suppressGraphClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+}
+async function loadConferenceGraph({focus, query = "", returnFocus = false} = {}) {
+  const conferenceId = new URLSearchParams(window.location.search).get("conference");
+  if (!conferenceId) return;
+  const token = ++graphRequestToken;
+  setGraphControlsLoading(true);
+  $("graph-status").textContent = "Loading cited public graph connections…";
+  try {
+    const body = {limit: GRAPH_LIMIT};
+    if (focus) body.focus = focus;
+    if (query) body.query = query;
+    const source = graphSourceId();
+    if (source) body.source = source;
+    body.interest_topic_ids = Array.from(interestTopicIds);
+    body.seeking_topic_ids = Array.from(seekingTopicIds);
+    const response = await fetch(`/api/conferences/${encodeURIComponent(conferenceId)}/graph`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error("Graph unavailable");
+    const data = await response.json();
+    if (token !== graphRequestToken) return;
+    if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)
+        || typeof data.center_id !== "string") throw new Error("Graph unavailable");
+    data.nodes = data.nodes.filter(item => item && typeof item.id === "string"
+      && typeof item.name === "string" && Array.isArray(item.roles)
+      && (item.distance === null || (Number.isInteger(item.distance) && item.distance >= 0 && item.distance <= 6)));
+    data.edges = data.edges.filter(edge => edge && typeof edge.source === "string"
+      && typeof edge.target === "string" && GRAPH_CATEGORIES.has(edge.category)
+      && Array.isArray(edge.evidence_ids));
+    conferenceGraph = data;
+    Object.assign(evidence, data.evidence || {});
+    Object.assign(names, data.people || {});
+    if (!defaultGraphFocus) defaultGraphFocus = data.center_id;
+    if (Array.from($("graph-focus").options).some(option => option.value === data.center_id)) {
+      $("graph-focus").value = data.center_id;
+    }
+    renderConferenceGraph(returnFocus);
+    const shown = data.nodes.length;
+    const total = Number.isInteger(data.total_count) ? data.total_count : shown;
+    const rosterCount = Number.isInteger(data.roster_count) ? data.roster_count : conferenceRosterCount();
+    let message = `Showing ${shown} of ${total} matching profiles; ${rosterCount} people in this conference roster.`;
+    if (data.truncated) message += " The graph is limited to a bounded view.";
+    $("graph-status").textContent = message;
+  } catch (_) {
+    if (token === graphRequestToken) {
+      $("conference-graph").replaceChildren();
+      $("graph-status").textContent = "The cited conference graph is temporarily unavailable.";
+    }
+  } finally {
+    if (token === graphRequestToken) setGraphControlsLoading(false);
+  }
+}
+function conferenceRosterCount() {
+  return Object.keys(conferenceRoster).length;
+}
+function populateGraphFocus() {
+  const select = $("graph-focus"), previous = select.value;
+  const entries = Object.values(conferenceRoster)
+    .sort((left, right) => (left.name || "").localeCompare(right.name || "") || left.id.localeCompare(right.id));
+  const placeholder = new Option("Choose a public profile", "");
+  select.replaceChildren(placeholder, ...entries.map(person => new Option(person.name || "Unnamed public profile", person.id)));
+  if (entries.some(person => person.id === previous)) select.value = previous;
+}
+function readProfileTopicContext(conferenceId) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(PROFILE_CONTEXT_KEY) || "null");
+    if (!saved || saved.conference_id !== conferenceId) return null;
+    const topics = Array.isArray(saved.topics) ? saved.topics.filter(item => item
+      && typeof item.id === "string" && typeof item.name === "string") : [];
+    return {
+      interest_topic_ids: Array.isArray(saved.interest_topic_ids)
+        ? saved.interest_topic_ids.filter(value => typeof value === "string") : [],
+      seeking_topic_ids: Array.isArray(saved.seeking_topic_ids)
+        ? saved.seeking_topic_ids.filter(value => typeof value === "string") : [],
+      topics,
+    };
+  } catch (_) { return null; }
+}
+function persistTopicSelections(conferenceId) {
+  profileTopicContext = {
+    conference_id: conferenceId,
+    interest_topic_ids: Array.from(interestTopicIds),
+    seeking_topic_ids: Array.from(seekingTopicIds),
+    topics: conferenceTopics.filter(item => interestTopicIds.has(item.id)
+      || seekingTopicIds.has(item.id)).map(item => ({id: item.id, name: item.name})),
+  };
+  try { sessionStorage.setItem(PROFILE_CONTEXT_KEY, JSON.stringify(profileTopicContext)); }
+  catch (_) { /* Continue with in-memory choices if session storage is unavailable. */ }
+}
+function renderTopicChips(container, topicIds, selected, groupName) {
+  container.replaceChildren();
+  if (!topicIds.length) {
+    container.append(node("p", "No cited topics are available yet.", "topic-empty"));
+    return;
+  }
+  topicIds.forEach((topic, index) => {
+    const label = node("label", undefined, "topic-chip");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.id = `${groupName}-topic-${index}`;
+    input.value = topic.id;
+    input.checked = selected.has(topic.id);
+    input.addEventListener("change", () => {
+      if (input.checked) selected.add(topic.id);
+      else selected.delete(topic.id);
+      const conferenceId = new URLSearchParams(window.location.search).get("conference");
+      if (conferenceId) {
+        persistTopicSelections(conferenceId);
+        loadConferenceGraph({focus: conferenceGraph?.center_id, query: $("graph-search").value.trim()});
+      }
+    });
+    label.append(input, node("span", topic.name));
+    container.append(label);
+  });
+}
+function renderTopicPickers(items, conferenceId) {
+  const byId = new Map();
+  for (const item of items || []) {
+    if (item && typeof item.id === "string" && typeof item.name === "string") byId.set(item.id, item);
+  }
+  if (!byId.size && profileTopicContext) {
+    conferenceTopics = [];
+    interestTopicIds = new Set();
+    seekingTopicIds = new Set();
+    renderTopicChips($("interest-topics"), conferenceTopics, interestTopicIds, "interest");
+    renderTopicChips($("seeking-topics"), conferenceTopics, seekingTopicIds, "seeking");
+    return;
+  }
+  conferenceTopics = Array.from(byId.values()).sort((left, right) => left.name.localeCompare(right.name));
+  interestTopicIds = new Set(profileTopicContext?.interest_topic_ids || []);
+  seekingTopicIds = new Set(profileTopicContext?.seeking_topic_ids || []);
+  interestTopicIds = new Set(conferenceTopics.filter(item => interestTopicIds.has(item.id)).map(item => item.id));
+  seekingTopicIds = new Set(conferenceTopics.filter(item => seekingTopicIds.has(item.id)).map(item => item.id));
+  renderTopicChips($("interest-topics"), conferenceTopics, interestTopicIds, "interest");
+  renderTopicChips($("seeking-topics"), conferenceTopics, seekingTopicIds, "seeking");
+  if (profileTopicContext) persistTopicSelections(conferenceId);
+}
+function renderGraphRoster(attendees, speakers) {
+  conferenceRoster = {};
+  for (const person of attendees) {
+    conferenceRoster[person.id] = {...person, roles: ["confirmed_attendee"]};
+  }
+  for (const person of speakers) {
+    const existing = conferenceRoster[person.id] || {...person, roles: []};
+    existing.roles = Array.from(new Set([...(existing.roles || []), "scheduled_speaker"]));
+    existing.evidence_ids = Array.from(new Set([...(existing.evidence_ids || []), ...(person.evidence_ids || [])]));
+    existing.talks = person.talks || existing.talks || [];
+    conferenceRoster[person.id] = existing;
+  }
+  populateGraphFocus();
 }
 async function loadConferenceContext() {
   const conferenceId = new URLSearchParams(window.location.search).get("conference");
@@ -149,17 +909,28 @@ async function loadConferenceContext() {
       fetch(`/api/conferences/${encodeURIComponent(conferenceId)}/people`).then(checkedJson)
     ]);
     Object.assign(evidence, peopleResponse.evidence || {});
+    let topicItems = [];
+    try {
+      const topicResponse = await fetch(`/api/conferences/${encodeURIComponent(conferenceId)}/topics`).then(checkedJson);
+      topicItems = topicResponse.items || [];
+      Object.assign(evidence, topicResponse.evidence || {});
+    } catch (_) { /* The graph and roster remain usable when topic suggestions are unavailable. */ }
     const conference = (directory.items || []).find(item => item.id === conferenceId);
     $("explore-conference-title").textContent = conference?.name || "Conference directory";
     $("explore-conference-dates").textContent = conference?.starts && conference?.ends
       ? `${conference.starts} – ${conference.ends}` : "Browse the public people listed for this conference.";
+    renderGraphRoster(peopleResponse.confirmed_attendees || [], peopleResponse.scheduled_speakers || []);
     renderDirectoryRows($("explore-attendees"), peopleResponse.confirmed_attendees || [], "attendee");
     renderDirectoryRows($("explore-speakers"), peopleResponse.scheduled_speakers || [], "speaker");
+    profileTopicContext = readProfileTopicContext(conferenceId);
+    renderTopicPickers(topicItems, conferenceId);
+    await loadConferenceGraph();
   } catch (_) {
     $("explore-conference-title").textContent = "Conference directory unavailable";
     $("explore-conference-dates").textContent = "Public profile exploration is still available below.";
     $("explore-attendees").replaceChildren(node("p", "Attendee information could not be loaded.", "quiet-copy"));
     $("explore-speakers").replaceChildren(node("p", "Speaker information could not be loaded.", "quiet-copy"));
+    $("graph-status").textContent = "Conference people information could not be loaded.";
   }
 }
 $("try-form").onsubmit = event => { event.preventDefault(); action("paths"); };
@@ -170,7 +941,7 @@ $("try-example").onclick = () => {
   populateSelect("try-source", "try-source-filter");
   populateSelect("try-target", "try-target-filter");
   $("try-source").value = example.source; $("try-target").value = example.target;
-  selectionChanged(); action("paths");
+  selectionChanged(); graphSourceChanged(); action("paths");
 };
 function selectionChanged() {
   $("try-path-results").replaceChildren();
@@ -178,9 +949,14 @@ function selectionChanged() {
   $("try-status").textContent = "Choose two distinct public profiles, then search.";
   controls();
 }
-$("try-source").onchange = selectionChanged;
+$("try-source").onchange = () => { selectionChanged(); graphSourceChanged(); };
 $("try-target").onchange = selectionChanged;
-$("try-source-filter").oninput = () => { populateSelect("try-source", "try-source-filter"); selectionChanged(); };
+$("try-source-filter").oninput = () => {
+  const previous = $("try-source").value;
+  populateSelect("try-source", "try-source-filter");
+  selectionChanged();
+  if (previous !== $("try-source").value) graphSourceChanged();
+};
 $("try-target-filter").oninput = () => { populateSelect("try-target", "try-target-filter"); selectionChanged(); };
 async function init() {
   try {
@@ -198,5 +974,35 @@ async function init() {
   } catch (error) { $("try-status").textContent = error.message; }
   controls();
 }
+$("graph-search-button").onclick = () => loadConferenceGraph({
+  focus: $("graph-focus").value || conferenceGraph?.center_id,
+  query: $("graph-search").value.trim(),
+});
+$("graph-search").onkeydown = event => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    $("graph-search-button").click();
+  }
+};
+$("graph-focus").onchange = () => loadConferenceGraph({
+  focus: $("graph-focus").value,
+  query: $("graph-search").value.trim(),
+});
+$("graph-public-comparison").onchange = () => {
+  if (conferenceGraph) conversationResults.clear();
+  graphSourceChanged();
+};
+$("graph-zoom-in").onclick = () => { graphZoom = Math.min(1.6, graphZoom + 0.15); renderConferenceGraph(); };
+$("graph-zoom-out").onclick = () => { graphZoom = Math.max(0.7, graphZoom - 0.15); renderConferenceGraph(); };
+$("graph-zoom-reset").onclick = () => {
+  graphZoom = 1;
+  graphYaw = -0.35;
+  graphPitch = 0.28;
+  $("graph-search").value = "";
+  if (defaultGraphFocus) $("graph-focus").value = defaultGraphFocus;
+  loadConferenceGraph({focus: defaultGraphFocus || undefined, query: ""});
+};
+$("graph-3d-toggle").onchange = () => renderConferenceGraph();
+setupGraphRotation();
 init();
 loadConferenceContext();
