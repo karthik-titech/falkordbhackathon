@@ -268,6 +268,13 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
     evidence_ids = set(seeking_evidence)
     source_evidence_ids = {eid for topic in source_topics.values() for eid in topic["evidence_ids"]}
     target_evidence_ids = {eid for topic in target_topics.values() for eid in topic["evidence_ids"]}
+    # Include the target's cited publications/bios, even without a topic edge.
+    work_rows = store.query(store.event(),
+        "MATCH (:Person {id:$target})-[:SUPPORTED_BY]->(e:Evidence) "
+        "RETURN DISTINCT e.id ORDER BY e.id LIMIT 40", {"target": target}).result_set
+    work_evidence = _evidence(store, [row[0] for row in work_rows])
+    work_ids = {eid for eid, fact in work_evidence.items()
+                if _specific_work(fact, public_people_by_id.get(target, ""))}
     evidence_ids.update(source_evidence_ids)
     evidence_ids.update(target_evidence_ids)
     opener_topic_matches = defaultdict(set)
@@ -330,14 +337,45 @@ def public_pair_context(store, source, target, interest_topic_ids=(), seeking_to
         "topic_names": {topic_id: topic.get("name") or topic_id for topic_id, topic in target_topics.items()},
         "connection_type": connection_type, "reason_code": reason_code,
         "reason": reason, "features": features,
-        "evidence_ids": sorted(evidence_ids), "routes": routes,
-        "opener_evidence_ids": sorted(target_evidence_ids | route_evidence_ids),
+        "evidence_ids": sorted(evidence_ids | work_ids), "routes": routes,
+        "opener_evidence_ids": sorted(target_evidence_ids | route_evidence_ids | work_ids),
         "opener_topic_matches": {eid: sorted(ids) for eid, ids in opener_topic_matches.items()},
         "related_topic_matches": related_pairs,
         "related_topic_count": len(related_pairs),
         "route_truncated": route_truncated,
         "topic_matches": {"shared": sorted(shared), "seeking": sorted(sought)},
     }
+
+
+def _specific_work(evidence, target_name):
+    """Extract a short work title only from an explicit attributed source fact."""
+    claim = evidence.get("claim", "")
+    if not isinstance(claim, str):
+        return None
+    patterns = [("session", r'\bpresent(?:ed|s)?\s+["“]([^"”\n]+)["”]')]
+    if target_name:
+        subject = re.escape(target_name)
+        patterns.extend([
+            ("paper", subject + r'\s+(?:co-authored|authored|published|wrote)\s+(?:the\s+|a\s+)?paper\s+["“]([^"”\n]+)["”]'),
+            ("post", subject + r'\s+(?:posted|tweeted|wrote|published)\s+(?:the\s+|a\s+)?(?:(?:post|tweet)\s+)?["“]([^"”\n]+)["”]'),
+            ("article", subject + r'\s+(?:wrote|published|authored)\s+(?:the\s+|an?\s+)?(?:article|blog post)\s+["“]([^"”\n]+)["”]'),
+            ("project", subject + r'\s+(?:built|created|launched|developed)\s+(?:the\s+)?(?:project|tool|library)\s+["“]([^"”\n]+)["”]'),
+        ])
+    for kind, pattern in patterns:
+        match = re.search(pattern, claim, re.I)
+        if match:
+            if kind == "session" and target_name and target_name.casefold() not in claim[:match.start()].casefold():
+                continue
+            title = " ".join(match.group(1).split())
+            if 4 <= len(title) <= 110:
+                return kind, title
+    # An article heading immediately followed by the target's author byline.
+    if target_name and "this context: " in claim:
+        excerpt = claim.split("this context: ", 1)[1]
+        byline = re.match(r'(.{8,110}?) - The GitHub Blog\s+' + re.escape(target_name) + r'\s*·\s*@', excerpt)
+        if byline:
+            return "article", byline.group(1).strip()
+    return None
 
 
 def _opener_candidates(context, evidence_map, refreshed):
@@ -387,9 +425,10 @@ def _opener_candidates(context, evidence_map, refreshed):
             })
             break
     # Prefer evidence tied to the user's shared interests over general articles.
-    ordered_ids = sorted(matched_ids, key=lambda eid: (
-        eid not in context["opener_topic_matches"], eid not in route_ids, eid))
     target_name = context.get("public_names", {}).get(context["target"], "")
+    ordered_ids = sorted(matched_ids, key=lambda eid: (
+        _specific_work(evidence_map[eid], target_name) is None,
+        eid not in context["opener_topic_matches"], eid not in route_ids, eid))
     greeting = f"Hey {target_name.split()[0]}, " if target_name else "Hey, "
     for evidence_id in ordered_ids:
         evidence = evidence_map.get(evidence_id)
@@ -400,8 +439,23 @@ def _opener_candidates(context, evidence_map, refreshed):
         topic_ids = shared_topic_ids or context.get("opener_target_topics", {}).get(evidence_id, [])
         topic = next((context.get("topic_names", {}).get(tid) for tid in topic_ids
                       if context.get("topic_names", {}).get(tid)), None)
-        talk = re.search(r'presented "([^"\n]+)"', evidence.get("claim", ""))
-        if topic:
+        talk = re.search(r'present(?:ed|s) "([^"\n]+)"', evidence.get("claim", ""))
+        work = _specific_work(evidence, target_name)
+        if work:
+            kind, title = work
+            key = f"{kind}:{title.casefold()}"
+            if key in seen_topics:
+                continue
+            seen_topics.add(key)
+            questions = {"paper": "what surprised you most in the results?",
+                         "post": "has your thinking changed since you posted it?",
+                         "article": "which idea from it are you putting into practice?",
+                         "project": "what was the hardest part to get right?",
+                         "session": "what's the biggest trap people hit when they try it?"}
+            text = f"{greeting}your {kind} “{title}” caught my eye—{questions[kind]}"
+            if shared_topic_ids and topic and len(text) < 135:
+                text = f"{greeting}I'm exploring {topic} too—what inspired your {kind} “{title}”?"
+        elif topic:
             key = topic.casefold()
             if key in seen_topics:
                 continue
@@ -434,6 +488,7 @@ def _opener_candidates(context, evidence_map, refreshed):
         candidates.append({"text": text, "evidence_id": evidence_id,
                            "evidence_ids": [evidence_id],
                            "url": evidence["url"], "style": style,
+                           "specific_work": bool(work),
                            "reason": "Based on a cited public professional source."})
         if len(candidates) == 3:
             break
@@ -710,7 +765,7 @@ def assess_conversation(store, conference_id, source, target, jev=None, brightda
         opener_status = "ranked"
     else:
         order = sorted(range(len(candidates)), key=lambda index: (
-            candidates[index]["evidence_id"] is None, candidates[index]["style"], index))
+            candidates[index]["evidence_id"] is None, not candidates[index].get("specific_work"), candidates[index]["style"], index))
         opener_status = "deterministic"
     ranked_openers = [{**candidates[index], "rank": rank}
                       for rank, index in enumerate(order, 1)]
