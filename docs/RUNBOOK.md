@@ -103,3 +103,18 @@ Replay needs no graph or Decisions service. Repeat the recorded actions,
 including target and conference selections. Authenticated calls require the
 same token used during recording; recording files contain a credential hash,
 not the token. Both pages display **Recorded run**.
+
+## FalkorDB Cloud
+
+Set `FALKORDB_URL` in your private environment file to the full `falkors://` URL.
+Docker Compose passes it only to the web service. When configured, the app uses
+TLS and the `wo_event` public graph; owner graphs retain their separate namespaces.
+The small `conference` setup graph remains a separate synthetic example.
+Explicit host and port arguments still select the local database for isolated tests.
+
+To copy an already-loaded local public event graph to the configured cloud database,
+mount the private environment file read-only and run `python -m scripts.import_cloud`
+from the repository inside the Docker image, with `CONFERENCE_ENV_FILE` pointing to
+that file. The import merges bounded batches without copying private owner graphs.
+Cloud startup skips the bundled seed load; import before starting the web service.
+Unset `FALKORDB_URL` to use the local Compose database and automatic seed loading.

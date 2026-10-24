@@ -20,6 +20,13 @@ class GraphStore:
     def connect(cls, host=None, port=None, prefix="wo_"):
         from falkordb import FalkorDB
 
+        url = os.environ.get("FALKORDB_URL")
+        if url and host is None and port is None:
+            if not url.startswith("falkors://"):
+                raise ValueError("FALKORDB_URL must use the full falkors:// TLS URL")
+            return cls(FalkorDB.from_url(
+                url, socket_connect_timeout=15, socket_timeout=60,
+            ), prefix)
         return cls(FalkorDB(
             host=host if host is not None else os.environ.get("FALKORDB_HOST", "localhost"),
             port=int(port if port is not None else os.environ.get("FALKORDB_PORT", "6379")),

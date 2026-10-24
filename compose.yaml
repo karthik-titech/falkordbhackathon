@@ -14,6 +14,7 @@ services:
       graph:
         condition: service_healthy
     environment:
+      FALKORDB_URL: ${FALKORDB_URL:-}
       FALKORDB_HOST: graph
       FALKORDB_PORT: "6379"
       DECISIONS_API_KEY: ${DECISIONS_API_KEY:-}
@@ -26,7 +27,9 @@ services:
       - sh
       - -c
       - >-
-        python -m warmopen.cli load /app/data/seed_public.json &&
+        if [ -z "$$FALKORDB_URL" ]; then
+          python -m warmopen.cli load /app/data/seed_public.json || exit 1;
+        fi;
         exec python -m warmopen.cli serve --host 0.0.0.0 --port 8080 --public-trial
 
 volumes:
