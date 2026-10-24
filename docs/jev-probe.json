@@ -1,0 +1,43 @@
+{
+  "request": {
+    "url": "https://api.typesafe.ai/v1/systemone",
+    "headers": {
+      "Authorization": "Bearer [REDACTED]"
+    },
+    "body": {
+      "model": "jev-latest",
+      "state": {
+        "evidence_count": 3,
+        "gaps_count": 0
+      },
+      "questions": {
+        "fit": {
+          "type": "choice",
+          "instructions": "Choose high or low fit from the abstract counts.",
+          "criteria": {
+            "high": "Evidence count exceeds gaps count.",
+            "low": "Evidence count does not exceed gaps count."
+          }
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "jev-1.14.0",
+    "answers": {
+      "fit": {
+        "type": "choice",
+        "choice": "high",
+        "confidence": 1.0,
+        "probabilities": {
+          "high": 1.0,
+          "low": 0.0
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 338,
+      "output_tokens": 31
+    }
+  }
+}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Warm Open</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div id="mode-banner" role="status" hidden>Recorded run</div>
+  <header><p id="kicker">◆ 01 · FIND</p><div class="header-meta"><p>WARM OPEN · FALKORDB <span id="step-counter">01 / 05</span></p><a href="/owner" target="_blank" rel="noopener">Owner approvals</a></div></header>
+  <main>
+    <div class="slide-heading"><h1 id="headline">Find your next conversation.</h1><p id="headline-detail" hidden></p><p id="subline">Choose a speaker and a goal.</p></div>
+    <form id="find-form" class="panel pickers">
+      <label>Requester<select id="requester" required></select></label>
+      <label>Filter speakers<input id="target-filter" type="search" placeholder="Name, talk, or conference"></label>
+      <label>Target speaker<select id="target" required></select></label>
+      <label>Goal<select id="goal"><option value="invest">Invest</option><option value="sales">Product sales proposal</option></select></label>
+      <button id="find" type="submit">Find a path</button>
+    </form>
+    <p id="status" role="status" aria-live="polite">Loading attendees and speakers…</p>
+    <div class="workspace">
+      <div>
+        <section class="panel"><div class="section-title"><h2>Your warm path</h2><span id="request-state"></span></div>
+          <div class="path-scroll" role="region" aria-label="Scrollable warm path" tabindex="0"><svg id="path-view" viewBox="0 0 900 220" role="img" aria-label="Warm introduction route"></svg></div>
+          <p id="path-note">Pick a speaker to find evidence for each hop.</p><div id="hop-evidence"></div>
+          <p id="memory-note" class="claim" hidden>Using your logged meetings</p>
+          <h2>Log a meeting</h2>
+          <form id="meeting-form" class="meeting-row">
+            <label>Filter people<input id="meeting-filter" type="search" placeholder="Name"></label>
+            <label>Person you met<select id="meeting-person" required></select></label>
+            <label>Your token<input id="requester-token" type="password" autocomplete="off"></label>
+            <button id="log-meeting" type="submit">Log meeting</button>
+          </form>
+          <p id="meeting-status" class="claim" role="status" aria-live="polite"></p>
+        </section>
+        <section class="panel"><h2>Private reachability</h2><p>Owners decide separately who can ask about a route and who can see it.</p>
+          <button id="ask" disabled>Ask owners</button><div id="owners"></div>
+        </section>
+        <section class="panel"><div class="section-title"><h2>uncalibrated fit</h2><button id="score" disabled>Score fit</button></div><div id="fit">A graph-sourced fit assessment, with evidence gaps.</div></section>
+        <section class="panel"><div class="section-title"><h2>Start the conversation</h2><button id="openers" disabled>Openers</button></div><div id="opener-cards" class="cards"></div></section>
+        <button id="send" disabled>Send intro request</button>
+      </div>
+      <aside class="panel timeline-panel"><h2>Agent timeline</h2><p>Handoffs read from the event graph.</p><ol id="agent-timeline" aria-live="polite"></ol></aside>
+    </div>
+    <ol id="step-track" aria-label="Introduction progress">
+      <li data-step="find" aria-current="step"><span class="step-marker" aria-hidden="true">■</span><span>01 FIND</span></li>
+      <li data-step="ask"><span class="step-marker" aria-hidden="true">□</span><span>02 ASK</span></li>
+      <li data-step="approve"><span class="step-marker" aria-hidden="true">□</span><span>03 APPROVE</span></li>
+      <li data-step="score"><span class="step-marker" aria-hidden="true">□</span><span>04 SCORE</span></li>
+      <li data-step="open"><span class="step-marker" aria-hidden="true">□</span><span>05 OPEN</span></li>
+    </ol>
+  </main>
+</body>
+</html>

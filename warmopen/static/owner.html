@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Owner approvals · Warm Open</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/owner.js" defer></script>
+</head>
+<body>
+  <div id="mode-banner" role="status" hidden>Recorded run</div>
+  <header><p id="kicker">◆ OWNER APPROVALS</p><div class="header-meta"><p>WARM OPEN · FALKORDB</p><a href="/">Requester page</a></div></header>
+  <main>
+    <div class="slide-heading"><h1 id="headline">No pending requests.</h1><p id="subline">Your connections, your choice.</p></div>
+    <form id="owner-form" class="panel pickers">
+      <label>Owner id<input id="owner-id" required autocomplete="username"></label>
+      <label>Owner token<input id="owner-token" required type="password" autocomplete="off"></label>
+      <button type="submit">Open pending requests</button>
+    </form>
+    <p>Approve reachability shares only hop count and tie. Approve reveal permits the route names to be shown.</p>
+    <p id="owner-status" role="status" aria-live="polite">Enter your owner id and token once for this browser tab.</p>
+    <div id="pending"></div>
+    <template id="approval-row"><article class="panel"><h2></h2><p></p><div class="actions"><button data-scope="reachability">Approve reachability</button><button data-scope="reveal">Approve reveal</button></div></article></template>
+  </main>
+</body>
+</html>

@@ -1,0 +1,12 @@
+[project]
+name = "warmopen"
+version = "0.1.0"
+description = "Consent-based conference introductions through FalkorDB"
+requires-python = ">=3.11"
+dependencies = ["falkordb"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
